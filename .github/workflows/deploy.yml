@@ -1,0 +1,39 @@
+name: Deploy
+
+# main へのマージ（push）で pos.shutay.com（自宅Ubuntuサーバー）へ自動デプロイ。
+#
+# 必要な GitHub Secrets:
+#   DEPLOY_HOST     : サーバーのホスト名 / IP
+#   DEPLOY_USER     : SSH ユーザー名
+#   DEPLOY_SSH_KEY  : SSH 秘密鍵
+#   DEPLOY_PATH     : サーバー上のリポジトリのパス（例: /opt/gakusaiPos）
+#   DEPLOY_PORT     : SSH ポート（未設定なら 22）
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            set -e
+            cd "${{ secrets.DEPLOY_PATH }}"
+            git fetch --all
+            git reset --hard origin/main
+            docker compose build
+            docker compose up -d
+            docker compose exec -T backend php artisan migrate --force
+            docker compose exec -T backend php artisan config:cache

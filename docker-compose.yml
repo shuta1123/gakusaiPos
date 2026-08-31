@@ -1,0 +1,136 @@
+# 学祭POS ローカル開発用 Docker 構成
+#
+# services:
+#   frontend : Next.js  → 3001
+#   backend  : Laravel  → 8001（APIサーバー）
+#   reverb   : Laravel Reverb（WebSocket）→ 8080  ※backendイメージを再利用
+#   queue    : キューワーカー（ブロードキャスト配送）→ backendイメージを再利用
+#   db       : MySQL    → 3306
+#   redis    : Redis    → 6379
+
+# PHP系3サービス共通の環境変数。
+# ここに定義した実環境変数は Laravel の .env より優先される（本番はサーバー側 .env で上書き）。
+x-backend-env: &backend-env
+  APP_ENV: local
+  APP_DEBUG: "true"
+  # ローカル開発用の固定キー（本番はサーバーの .env で上書きすること）
+  APP_KEY: base64:+7BBJ1I+KgLR2mO9NxCYxEuQtlosGik35zlsmz6KE2w=
+  DB_CONNECTION: mysql
+  DB_HOST: db
+  DB_PORT: "3306"
+  DB_DATABASE: gakusai_pos
+  DB_USERNAME: gakusai
+  DB_PASSWORD: secret
+  REDIS_CLIENT: predis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  SESSION_DRIVER: redis
+  BROADCAST_CONNECTION: reverb
+  REVERB_APP_ID: "891732"
+  REVERB_APP_KEY: n93se9bles5oeqvj1gfq
+  REVERB_APP_SECRET: fyxsrmee39wjrq4qgipu
+  REVERB_HOST: localhost
+  REVERB_PORT: "8080"
+  REVERB_SCHEME: http
+  REVERB_SERVER_HOST: 0.0.0.0
+  REVERB_SERVER_PORT: "8080"
+  STAFF_PASSWORD: gakusai2026
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: gakusai_pos
+      MYSQL_USER: gakusai
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  reverb:
+    build: ./backend
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+    environment:
+      <<: *backend-env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  queue:
+    build: ./backend
+    command: ["php", "artisan", "queue:work", "--tries=3"]
+    environment:
+      <<: *backend-env
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost:8001/api
+      NEXT_PUBLIC_REVERB_APP_KEY: n93se9bles5oeqvj1gfq
+      NEXT_PUBLIC_REVERB_HOST: localhost
+      NEXT_PUBLIC_REVERB_PORT: "8080"
+      NEXT_PUBLIC_REVERB_SCHEME: http
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
+  backend_vendor:
+  frontend_node_modules:
+  frontend_next:
