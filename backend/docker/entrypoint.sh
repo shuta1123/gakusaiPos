@@ -22,10 +22,19 @@ if [ -n "$DB_HOST" ]; then
     echo "Database is up."
 fi
 
-# マイグレーション & シードは backend サービスでのみ実行
+# マイグレーションは backend サービスでのみ実行
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
-    echo "Running migrations & seeders ..."
-    php artisan migrate --seed --force
+    echo "Running migrations ..."
+    php artisan migrate --force
+
+    # シードは商品テーブルが空の初回のみ（再起動で運用状態を上書きしない）
+    PRODUCT_COUNT="$(php artisan tinker --execute='echo \App\Models\Product::count();' 2>/dev/null | tail -n1 | tr -dc '0-9')"
+    if [ "${PRODUCT_COUNT:-0}" = "0" ]; then
+        echo "Seeding initial data ..."
+        php artisan db:seed --force
+    else
+        echo "Seed skipped (products already exist: ${PRODUCT_COUNT})."
+    fi
 fi
 
 # 設定キャッシュのクリア（マウント環境での取りこぼし防止）

@@ -16,8 +16,10 @@ class ProductSeeder extends Seeder
             ['name' => 'ホットドッグ', 'price' => 250],
         ];
 
+        // firstOrCreate で「無ければ作る」。既存商品の is_sold_out や price は
+        // 運用中の状態を尊重して上書きしない（再起動時のリセット防止）。
         foreach ($products as $product) {
-            Product::updateOrCreate(
+            Product::firstOrCreate(
                 ['name' => $product['name']],
                 ['price' => $product['price'], 'is_sold_out' => false],
             );

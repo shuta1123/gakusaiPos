@@ -29,6 +29,6 @@ Route::patch('/products/{product}', [ProductController::class, 'update'])->middl
 Route::get('/orders', [OrderController::class, 'index'])->middleware('staff.auth');
 Route::get('/orders/next-number', [OrderController::class, 'nextNumberEndpoint'])->middleware('staff.auth');
 Route::post('/orders', [OrderController::class, 'store']); // 客用（認証なし）
-Route::get('/orders/{order}', [OrderController::class, 'show']); // 客用（認証なし）: 自分の注文の状態確認
-Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->middleware('staff.auth');
-Route::delete('/orders/{order}', [OrderController::class, 'destroy'])->middleware('staff.auth');
+Route::get('/orders/{order}', [OrderController::class, 'show'])->whereNumber('order'); // 客用（認証なし）: 自分の注文の状態確認
+Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->whereNumber('order')->middleware('staff.auth');
+Route::delete('/orders/{order}', [OrderController::class, 'destroy'])->whereNumber('order')->middleware('staff.auth');

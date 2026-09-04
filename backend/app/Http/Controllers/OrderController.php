@@ -6,6 +6,7 @@ use App\Events\OrderCancelled;
 use App\Events\OrderCreated;
 use App\Events\OrderStatusUpdated;
 use App\Models\Order;
+use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +45,19 @@ class OrderController extends Controller
             'items.*.quantity' => ['required', 'integer', 'min:1'],
         ]);
 
-        $order = DB::transaction(function () use ($validated) {
+        // 注文時点の商品を取得し、売り切れチェックと単価スナップショットに使う。
+        $products = Product::whereIn('id', collect($validated['items'])->pluck('product_id'))
+            ->get()
+            ->keyBy('id');
+
+        $soldOut = $products->firstWhere('is_sold_out', true);
+        if ($soldOut) {
+            return response()->json([
+                'message' => "「{$soldOut->name}」は売り切れです",
+            ], 422);
+        }
+
+        $order = DB::transaction(function () use ($validated, $products) {
             $order = Order::create([
                 'number' => $this->nextNumber($validated['source']),
                 'source' => $validated['source'],
@@ -55,6 +68,8 @@ class OrderController extends Controller
                 $order->items()->create([
                     'product_id' => $item['product_id'],
                     'quantity' => $item['quantity'],
+                    // 注文時点の価格をスナップショット保存
+                    'unit_price' => $products[$item['product_id']]->price,
                 ]);
             }
 

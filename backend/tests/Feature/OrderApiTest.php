@@ -35,6 +35,27 @@ class OrderApiTest extends TestCase
 
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseCount('order_items', 1);
+        // 単価スナップショットが保存される
+        $this->assertDatabaseHas('order_items', [
+            'product_id' => $product->id,
+            'quantity' => 2,
+            'unit_price' => $product->price,
+        ]);
+    }
+
+    public function test_売り切れ商品は注文できない(): void
+    {
+        $product = Product::first();
+        $product->update(['is_sold_out' => true]);
+
+        $this->postJson('/api/orders', [
+            'source' => 'モバイル',
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 1],
+            ],
+        ])->assertStatus(422);
+
+        $this->assertDatabaseCount('orders', 0);
     }
 
     public function test_番号は帯ごとに循環する(): void

@@ -9,18 +9,20 @@
 #   redis    : Redis    → 6379
 
 # PHP系3サービス共通の環境変数。
-# ここに定義した実環境変数は Laravel の .env より優先される（本番はサーバー側 .env で上書き）。
+# ここに定義した実環境変数は Laravel の .env より優先される。
+# 値は ${VAR:-default} 形式で、ルートの .env（compose が自動読込）や実環境変数で上書き可能。
+# 本番では必ず APP_KEY / STAFF_PASSWORD / DB_PASSWORD / REVERB_APP_SECRET と
+# APP_ENV=production / APP_DEBUG=false を .env で上書きすること（.env.example 参照）。
 x-backend-env: &backend-env
-  APP_ENV: local
-  APP_DEBUG: "true"
-  # ローカル開発用の固定キー（本番はサーバーの .env で上書きすること）
-  APP_KEY: base64:+7BBJ1I+KgLR2mO9NxCYxEuQtlosGik35zlsmz6KE2w=
+  APP_ENV: ${APP_ENV:-local}
+  APP_DEBUG: ${APP_DEBUG:-true}
+  APP_KEY: ${APP_KEY:-base64:+7BBJ1I+KgLR2mO9NxCYxEuQtlosGik35zlsmz6KE2w=}
   DB_CONNECTION: mysql
   DB_HOST: db
   DB_PORT: "3306"
-  DB_DATABASE: gakusai_pos
-  DB_USERNAME: gakusai
-  DB_PASSWORD: secret
+  DB_DATABASE: ${DB_DATABASE:-gakusai_pos}
+  DB_USERNAME: ${DB_USERNAME:-gakusai}
+  DB_PASSWORD: ${DB_PASSWORD:-secret}
   REDIS_CLIENT: predis
   REDIS_HOST: redis
   REDIS_PORT: "6379"
@@ -28,30 +30,32 @@ x-backend-env: &backend-env
   QUEUE_CONNECTION: redis
   SESSION_DRIVER: redis
   BROADCAST_CONNECTION: reverb
-  REVERB_APP_ID: "891732"
-  REVERB_APP_KEY: n93se9bles5oeqvj1gfq
-  REVERB_APP_SECRET: fyxsrmee39wjrq4qgipu
-  REVERB_HOST: localhost
+  REVERB_APP_ID: ${REVERB_APP_ID:-891732}
+  REVERB_APP_KEY: ${REVERB_APP_KEY:-n93se9bles5oeqvj1gfq}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET:-fyxsrmee39wjrq4qgipu}
+  # サーバー側（backend/queue）が Reverb へイベント送信する際の接続先はサービス名 "reverb"。
+  # ブラウザ(Echo)の接続先は frontend の NEXT_PUBLIC_REVERB_HOST（=localhost）で別管理。
+  REVERB_HOST: ${REVERB_HOST:-reverb}
   REVERB_PORT: "8080"
   REVERB_SCHEME: http
   REVERB_SERVER_HOST: 0.0.0.0
   REVERB_SERVER_PORT: "8080"
-  STAFF_PASSWORD: gakusai2026
+  STAFF_PASSWORD: ${STAFF_PASSWORD:-gakusai2026}
 
 services:
   db:
     image: mysql:8.0
     environment:
-      MYSQL_DATABASE: gakusai_pos
-      MYSQL_USER: gakusai
-      MYSQL_PASSWORD: secret
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ${DB_DATABASE:-gakusai_pos}
+      MYSQL_USER: ${DB_USERNAME:-gakusai}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
     ports:
       - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\""]
       interval: 5s
       timeout: 5s
       retries: 20

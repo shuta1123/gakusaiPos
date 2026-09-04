@@ -13,6 +13,8 @@ return new class extends Migration
             $table->foreignId('order_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->constrained();
             $table->unsignedInteger('quantity');
+            // 注文時点の単価スナップショット。後から商品価格を変えても売上金額を復元できる。
+            $table->unsignedInteger('unit_price');
             $table->timestamps();
         });
     }

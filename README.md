@@ -92,6 +92,7 @@
 | order_id | INT | ordersへの外部キー |
 | product_id | INT | productsへの外部キー |
 | quantity | INT | 数量 |
+| unit_price | INT | 注文時点の単価スナップショット |
 
 **products**
 
