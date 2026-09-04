@@ -21,6 +21,9 @@ function KitchenInner() {
   // 準備完了（＝受け渡し待ち）を受け渡し完了へ。受け渡し済みは履歴として表示。
   const ready = useOrders({ status: "準備完了" });
   const done = useOrders({ status: "受け渡し完了" });
+  // 参照が安定した refresh を取り出しておく（useCallback 依存の安定化）。
+  const readyRefresh = ready.refresh;
+  const doneRefresh = done.refresh;
 
   const [handedIds, setHandedIds] = useState<Set<number>>(new Set());
   const handedRef = useRef<Set<number>>(new Set());
@@ -51,8 +54,8 @@ function KitchenInner() {
         await orderApi.updateStatus(order.id, "受け渡し完了");
         handedRef.current.add(order.id);
         setHandedIds(new Set(handedRef.current));
-        ready.refresh();
-        done.refresh();
+        readyRefresh();
+        doneRefresh();
       } catch (err) {
         setActionError(
           `注文${order.number}の受け渡しに失敗しました: ${
@@ -64,7 +67,7 @@ function KitchenInner() {
         setPending(new Set(inFlightRef.current));
       }
     },
-    [ready, done],
+    [readyRefresh, doneRefresh],
   );
 
   return (
@@ -76,13 +79,13 @@ function KitchenInner() {
         </Link>
       </header>
 
-      {(ready.error || actionError) && (
+      {(ready.error || done.error || actionError) && (
         <p
           role="alert"
           aria-live="polite"
           className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40"
         >
-          {actionError ?? ready.error}
+          {actionError ?? ready.error ?? done.error}
         </p>
       )}
 

@@ -112,8 +112,12 @@ export function useOrders(filter: Filter = {}): UseOrdersResult {
         disposed = true;
         stopPolling();
         conn?.unbind?.("state_change", sync);
+        // このフック分のリスナーのみ解除する（同一チャンネルを購読する
+        // 別の useOrders を巻き込んで leaveChannel しない）。
         try {
-          echo.leaveChannel("orders");
+          channel.stopListening(".order.created", onAny);
+          channel.stopListening(".order.status_updated", onAny);
+          channel.stopListening(".order.cancelled", onAny);
         } catch {
           /* noop */
         }
@@ -128,7 +132,10 @@ export function useOrders(filter: Filter = {}): UseOrdersResult {
     };
   }, [status, source]);
 
-  return { orders, loading, error, connected, refresh: () => fetchRef.current() };
+  // 参照を安定させ、利用側の useCallback 依存が毎回変わらないようにする。
+  const refresh = useCallback(() => fetchRef.current(), []);
+
+  return { orders, loading, error, connected, refresh };
 }
 
 type PusherConnection = {
