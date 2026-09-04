@@ -41,6 +41,9 @@ x-backend-env: &backend-env
   REVERB_SERVER_HOST: 0.0.0.0
   REVERB_SERVER_PORT: "8080"
   STAFF_PASSWORD: ${STAFF_PASSWORD:-gakusai2026}
+  # 開発はフロント(:3001)とAPI(:8001)が別オリジンのためCORS許可が必要。
+  # LAN(フォールバック)ではホストのIPに合わせて .env で上書きする。
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3001}
 
 services:
   db:
@@ -77,6 +80,7 @@ services:
     environment:
       <<: *backend-env
       RUN_MIGRATIONS: "true"
+      SETUP_ENV: "true"
     ports:
       - "8001:8001"
     volumes:

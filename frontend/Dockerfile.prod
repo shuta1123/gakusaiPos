@@ -1,0 +1,35 @@
+# 本番用フロントエンド（Next.js standalone ビルド）
+# ---- ビルドステージ ----
+FROM node:22-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+# 公開URL等はブラウザに焼き込まれるためビルド時に渡す（compose の build.args 経由）。
+ARG NEXT_PUBLIC_API_BASE
+ARG NEXT_PUBLIC_REVERB_APP_KEY
+ARG NEXT_PUBLIC_REVERB_HOST
+ARG NEXT_PUBLIC_REVERB_PORT
+ARG NEXT_PUBLIC_REVERB_SCHEME
+ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE \
+    NEXT_PUBLIC_REVERB_APP_KEY=$NEXT_PUBLIC_REVERB_APP_KEY \
+    NEXT_PUBLIC_REVERB_HOST=$NEXT_PUBLIC_REVERB_HOST \
+    NEXT_PUBLIC_REVERB_PORT=$NEXT_PUBLIC_REVERB_PORT \
+    NEXT_PUBLIC_REVERB_SCHEME=$NEXT_PUBLIC_REVERB_SCHEME
+RUN npm run build
+
+# ---- 実行ステージ ----
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+# standalone 出力に必要な最小限をコピー
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+EXPOSE 3001
+ENV PORT=3001 HOSTNAME=0.0.0.0
+CMD ["node", "server.js"]

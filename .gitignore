@@ -9,3 +9,8 @@ Thumbs.db
 
 # 環境変数（各サブプロジェクトの .gitignore でも除外）
 .env
+
+# バックアップ/一時ファイル
+*.reviewbak
+*.bak
+.env.*.bak

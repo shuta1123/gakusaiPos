@@ -1,0 +1,130 @@
+# 本番用 Docker 構成（Ubuntu サーバー / pos.shutay.com）
+#
+# 使い方:
+#   1) このリポジトリ直下に .env を作成（.env.production.example をコピーして値を設定）
+#   2) docker compose -f compose.prod.yml up -d --build
+#   3) 前段の Nginx が pos.shutay.com を各コンテナへリバースプロキシ（nginx/pos.shutay.com.conf）
+#
+# ポートは 127.0.0.1 のみに公開し、外部公開は Nginx 経由に限定する。
+#
+# 開発用 docker-compose.yml とイメージ/コンテナ/ボリュームを共有しないよう
+# 専用のプロジェクト名を付ける（同一ホストで両方使う場合の衝突防止）。
+name: gakusaipos-prod
+
+x-backend-env: &backend-env
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_URL: ${APP_URL:-https://pos.shutay.com}
+  APP_KEY: ${APP_KEY:?APP_KEY を .env に設定してください（php artisan key:generate --show）}
+  APP_LOCALE: ja
+  DB_CONNECTION: mysql
+  DB_HOST: db
+  DB_PORT: "3306"
+  DB_DATABASE: ${DB_DATABASE:-gakusai_pos}
+  DB_USERNAME: ${DB_USERNAME:-gakusai}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD を .env に設定してください}
+  REDIS_CLIENT: predis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  SESSION_DRIVER: redis
+  BROADCAST_CONNECTION: reverb
+  REVERB_APP_ID: ${REVERB_APP_ID:?REVERB_APP_ID を .env に設定してください}
+  REVERB_APP_KEY: ${REVERB_APP_KEY:?REVERB_APP_KEY を .env に設定してください}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET:?REVERB_APP_SECRET を .env に設定してください}
+  # サーバー側(backend/queue)が Reverb へ送信する接続先はサービス名。
+  REVERB_HOST: reverb
+  REVERB_PORT: "8080"
+  REVERB_SCHEME: http
+  REVERB_SERVER_HOST: 0.0.0.0
+  REVERB_SERVER_PORT: "8080"
+  STAFF_PASSWORD: ${STAFF_PASSWORD:?STAFF_PASSWORD を .env に設定してください}
+  # 単一ドメイン本番はCORS不要。既定は本番オリジンのみ（全許可にはしない）。
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://pos.shutay.com}
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-gakusai_pos}
+      MYSQL_USER: ${DB_USERNAME:-gakusai}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD を .env に設定してください}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD を .env に設定してください}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: "true"
+      SETUP_ENV: "true"
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  reverb:
+    build: ./backend
+    restart: unless-stopped
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+    environment:
+      <<: *backend-env
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  queue:
+    build: ./backend
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "--tries=3"]
+    environment:
+      <<: *backend-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-https://pos.shutay.com/api}
+        NEXT_PUBLIC_REVERB_APP_KEY: ${REVERB_APP_KEY:?REVERB_APP_KEY を .env に設定してください}
+        NEXT_PUBLIC_REVERB_HOST: ${NEXT_PUBLIC_REVERB_HOST:-pos.shutay.com}
+        NEXT_PUBLIC_REVERB_PORT: ${NEXT_PUBLIC_REVERB_PORT:-443}
+        NEXT_PUBLIC_REVERB_SCHEME: ${NEXT_PUBLIC_REVERB_SCHEME:-https}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
