@@ -96,8 +96,9 @@ export function useProducts(): UseProductsResult {
         disposed = true;
         stopPolling();
         conn?.unbind?.("state_change", sync);
+        // このフック分のリスナーのみ解除（他の購読者を巻き込まない）。
         try {
-          echo.leaveChannel("products");
+          channel.stopListening(".product.updated", onUpdated);
         } catch {
           /* noop */
         }
@@ -111,7 +112,9 @@ export function useProducts(): UseProductsResult {
     };
   }, []);
 
-  return { products, loading, error, refresh: () => fetchRef.current() };
+  const refresh = useCallback(() => fetchRef.current(), []);
+
+  return { products, loading, error, refresh };
 }
 
 type PusherConnection = {
