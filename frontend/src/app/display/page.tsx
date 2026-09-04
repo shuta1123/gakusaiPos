@@ -36,7 +36,7 @@ function DisplayInner() {
 
       {hasError && (
         <p
-          role="alert"
+          role="status"
           aria-live="polite"
           className="absolute inset-x-0 top-0 mx-auto w-fit rounded-b-lg bg-red-600 px-4 py-1.5 text-sm text-white"
         >
@@ -49,15 +49,15 @@ function DisplayInner() {
         <h2 className="text-center text-2xl font-bold text-green-700 dark:text-green-400">
           受け取りをお待ちの番号
         </h2>
-        {ready.loading && readyOrders.length === 0 ? (
+        {readyOrders.length === 0 && ready.loading ? (
           <p className="flex flex-1 items-center justify-center text-lg opacity-50">
             読み込み中…
           </p>
-        ) : readyOrders.length === 0 ? (
+        ) : readyOrders.length === 0 && !ready.error ? (
           <p className="flex flex-1 items-center justify-center text-lg opacity-50">
             現在ありません
           </p>
-        ) : (
+        ) : readyOrders.length === 0 ? null : (
           <div className="flex flex-wrap content-start justify-center gap-4">
             {readyOrders.map((o) => (
               <span
@@ -74,15 +74,15 @@ function DisplayInner() {
       {/* 準備中（控えめ） */}
       <section className="flex flex-col gap-4 rounded-2xl border border-black/15 p-6 dark:border-white/20 lg:w-[38%]">
         <h2 className="text-center text-xl font-semibold opacity-70">準備中</h2>
-        {preparing.loading && preparingOrders.length === 0 ? (
+        {preparingOrders.length === 0 && preparing.loading ? (
           <p className="flex flex-1 items-center justify-center text-lg opacity-40">
             読み込み中…
           </p>
-        ) : preparingOrders.length === 0 ? (
+        ) : preparingOrders.length === 0 && !preparing.error ? (
           <p className="flex flex-1 items-center justify-center text-lg opacity-40">
             現在ありません
           </p>
-        ) : (
+        ) : preparingOrders.length === 0 ? null : (
           <div className="flex flex-wrap content-start justify-center gap-3">
             {preparingOrders.map((o) => (
               <span
