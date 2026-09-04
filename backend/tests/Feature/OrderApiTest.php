@@ -157,6 +157,17 @@ class OrderApiTest extends TestCase
         $this->assertDatabaseCount('orders', 0);
     }
 
+    public function test_受け渡し完了からは戻せない(): void
+    {
+        $order = Order::create(['number' => 101, 'source' => '会計1', 'status' => '受け渡し完了']);
+
+        $this->withToken(StaffToken::current())
+            ->patchJson("/api/orders/{$order->id}/status", ['status' => '準備完了'])
+            ->assertStatus(422);
+
+        $this->assertSame('受け渡し完了', $order->fresh()->status);
+    }
+
     public function test_ステータス更新には認証が必要(): void
     {
         $order = Order::create(['number' => 100, 'source' => '会計1', 'status' => '注文完了']);

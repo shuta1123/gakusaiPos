@@ -104,6 +104,14 @@ class OrderController extends Controller
             'status' => ['required', Rule::in(Order::STATUS_FLOW)],
         ]);
 
+        // 終端「受け渡し完了」からの復帰は禁止。番号が解放・再利用された後に
+        // 復帰すると同一番号がアクティブで二重に存在し得るため。
+        if ($order->status === '受け渡し完了' && $validated['status'] !== '受け渡し完了') {
+            return response()->json([
+                'message' => '受け渡し完了の注文はステータスを戻せません',
+            ], 422);
+        }
+
         $order->update(['status' => $validated['status']]);
         $order->load('items.product');
 
