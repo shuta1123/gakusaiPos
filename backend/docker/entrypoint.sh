@@ -3,38 +3,45 @@ set -e
 
 cd /var/www/html
 
-# .env が無ければ雛形から生成
-if [ ! -f .env ]; then
-    cp .env.example .env
-fi
-
-# コンテナ環境変数(compose由来)を .env に反映する。
-# `php artisan serve`(php -S) は Docker の環境変数を直接読めない場合があるため、
-# 確実に読める .env ファイルへ書き込む（CORS/APP_KEY等をコンテナ間で一致させる）。
-sync_env() {
-    key="$1"
-    val="$(printenv "$key" 2>/dev/null || true)"
-    [ -z "$val" ] && return 0
-    # 既存の行を除去してから追記する。値は printf で literal に書くため、
-    # 秘密値に含まれ得る特殊文字（& | \ / 等）でも壊れない。
-    if [ -f .env ]; then
-        grep -v "^${key}=" .env > .env.sync.tmp 2>/dev/null || true
-        mv .env.sync.tmp .env
+# .env のセットアップ（生成・環境変数同期・APP_KEY生成）は主コンテナ(backend)のみで行う。
+# 理由:
+#  - この同期が必要なのは `php artisan serve`(php -S) が Docker 環境変数を直接読めないため。
+#    reverb(reverb:start)/queue(queue:work) は通常の CLI で環境変数を読めるため不要。
+#  - 開発環境では backend/reverb/queue が ./backend を共有マウントするため、
+#    同時に .env を書き換えると競合する。書き込みを単一コンテナに限定して回避する。
+if [ "${SETUP_ENV:-false}" = "true" ]; then
+    if [ ! -f .env ]; then
+        cp .env.example .env
     fi
-    printf '%s=%s\n' "$key" "$val" >> .env
-}
-for k in APP_ENV APP_DEBUG APP_URL APP_KEY APP_LOCALE \
-         DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
-         REDIS_CLIENT REDIS_HOST REDIS_PORT CACHE_STORE QUEUE_CONNECTION SESSION_DRIVER \
-         BROADCAST_CONNECTION REVERB_APP_ID REVERB_APP_KEY REVERB_APP_SECRET \
-         REVERB_HOST REVERB_PORT REVERB_SCHEME REVERB_SERVER_HOST REVERB_SERVER_PORT \
-         STAFF_PASSWORD CORS_ALLOWED_ORIGINS; do
-    sync_env "$k"
-done
 
-# APP_KEY 未設定なら生成
-if ! grep -q "^APP_KEY=base64:" .env; then
-    php artisan key:generate --force
+    # コンテナ環境変数(compose由来)を .env に反映（php artisan serve が確実に読めるように）。
+    sync_env() {
+        key="$1"
+        val="$(printenv "$key" 2>/dev/null || true)"
+        [ -z "$val" ] && return 0
+        # 既存の行を除去してから追記。値は printf で literal に書くため、
+        # 秘密値に含まれ得る特殊文字（& | \ / 等）でも壊れない。
+        if [ -f .env ]; then
+            grep -v "^${key}=" .env > .env.sync.tmp 2>/dev/null || true
+            mv .env.sync.tmp .env
+        fi
+        printf '%s=%s\n' "$key" "$val" >> .env
+    }
+    for k in APP_ENV APP_DEBUG APP_URL APP_KEY APP_LOCALE \
+             DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
+             REDIS_CLIENT REDIS_HOST REDIS_PORT CACHE_STORE QUEUE_CONNECTION SESSION_DRIVER \
+             BROADCAST_CONNECTION REVERB_APP_ID REVERB_APP_KEY REVERB_APP_SECRET \
+             REVERB_HOST REVERB_PORT REVERB_SCHEME REVERB_SERVER_HOST REVERB_SERVER_PORT \
+             STAFF_PASSWORD CORS_ALLOWED_ORIGINS; do
+        sync_env "$k"
+    done
+
+    # APP_KEY 未設定なら生成
+    if ! grep -q "^APP_KEY=base64:" .env; then
+        php artisan key:generate --force
+    fi
+
+    php artisan config:clear || true
 fi
 
 # DB の起動待ち（backend/queue/reverb すべてで待つ）
@@ -60,8 +67,5 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
         echo "Seed skipped (products already exist: ${PRODUCT_COUNT})."
     fi
 fi
-
-# 設定キャッシュのクリア（マウント環境での取りこぼし防止）
-php artisan config:clear || true
 
 exec "$@"
