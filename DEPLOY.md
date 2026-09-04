@@ -56,7 +56,11 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 
 # 証明書取得＋HTTPS自動設定（certbotが443ブロックと80→443リダイレクトを追記、自動更新も設定）
-sudo certbot --nginx -d pos.shutay.com
+sudo certbot --nginx --redirect -d pos.shutay.com
+
+# 自動更新の確認
+sudo certbot renew --dry-run
+systemctl list-timers | grep certbot
 ```
 > `certbot --nginx` は ACME 検証を自身で処理し（アプリ未起動でもOK）、この server ブロックに `listen 443 ssl` と証明書行を追記、80→443リダイレクトも作成。更新は certbot.timer が nginx 認証で無停止実行。
 
@@ -82,8 +86,7 @@ docker compose -f compose.prod.yml exec backend php artisan migrate --force
 
 ### （任意）GitHub Actions で自動デプロイ
 `.github/workflows/deploy.yml` は用意済み。GitHub の Secrets に
-`DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH`(=`/opt/gakusaiPos`) / `DEPLOY_PORT` を登録すると main マージで自動デプロイ。
-※ workflow 内の compose コマンドを `-f compose.prod.yml` に合わせて調整すること。
+`DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH`(=`/opt/gakusaiPos`) / `DEPLOY_PORT` を登録すると main マージで自動デプロイ（workflow は `compose.prod.yml` を使用済み）。
 
 ---
 

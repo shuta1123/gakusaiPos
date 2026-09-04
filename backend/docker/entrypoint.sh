@@ -15,11 +15,13 @@ sync_env() {
     key="$1"
     val="$(printenv "$key" 2>/dev/null || true)"
     [ -z "$val" ] && return 0
-    if grep -q "^${key}=" .env; then
-        sed -i "s|^${key}=.*|${key}=${val}|" .env
-    else
-        printf '%s=%s\n' "$key" "$val" >> .env
+    # 既存の行を除去してから追記する。値は printf で literal に書くため、
+    # 秘密値に含まれ得る特殊文字（& | \ / 等）でも壊れない。
+    if [ -f .env ]; then
+        grep -v "^${key}=" .env > .env.sync.tmp 2>/dev/null || true
+        mv .env.sync.tmp .env
     fi
+    printf '%s=%s\n' "$key" "$val" >> .env
 }
 for k in APP_ENV APP_DEBUG APP_URL APP_KEY APP_LOCALE \
          DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
