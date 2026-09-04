@@ -2,11 +2,16 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { getToken } from "@/lib/auth";
+import { getToken, onAuthChange } from "@/lib/auth";
 
 function subscribe(callback: () => void) {
+  // 他タブ変更（storage）と同一タブ変更（onAuthChange）の両方を購読する。
   window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
+  const off = onAuthChange(callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    off();
+  };
 }
 
 /**

@@ -41,7 +41,6 @@ export default function LoginPage() {
       <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
         <input
           type="password"
-          inputMode="text"
           autoFocus
           placeholder="共通パスワード"
           value={password}

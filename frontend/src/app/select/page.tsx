@@ -20,8 +20,9 @@ export default function SelectPage() {
   async function handleLogout() {
     try {
       await authApi.logout();
-    } catch {
-      /* サーバー側はステートレスなので失敗しても続行 */
+    } catch (err) {
+      // サーバー側はステートレスなので失敗してもクライアント側でログアウトを続行。
+      console.warn("ログアウトAPI呼び出しに失敗（続行します）:", err);
     }
     clearToken();
     router.replace("/login");

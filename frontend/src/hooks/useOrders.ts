@@ -79,14 +79,14 @@ export function useOrders(filter: Filter = {}): UseOrdersResult {
         echo.connector as { pusher?: { connection?: PusherConnection } }
       ).pusher;
       const conn = connector?.connection;
+      const sync = () => {
+        if (disposed || !conn) return;
+        const isConnected = conn.state === "connected";
+        setConnected(isConnected);
+        if (isConnected) stopPolling();
+        else startPolling();
+      };
       if (conn) {
-        const sync = () => {
-          if (disposed) return;
-          const isConnected = conn.state === "connected";
-          setConnected(isConnected);
-          if (isConnected) stopPolling();
-          else startPolling();
-        };
         conn.bind("state_change", sync);
         sync();
       } else {
@@ -96,6 +96,7 @@ export function useOrders(filter: Filter = {}): UseOrdersResult {
       return () => {
         disposed = true;
         stopPolling();
+        conn?.unbind?.("state_change", sync);
         try {
           echo.leaveChannel("orders");
         } catch {
@@ -116,6 +117,7 @@ export function useOrders(filter: Filter = {}): UseOrdersResult {
 }
 
 type PusherConnection = {
-  state: string;
+  state: "initialized" | "connecting" | "connected" | "unavailable" | "failed" | "disconnected";
   bind: (event: string, cb: () => void) => void;
+  unbind?: (event: string, cb: () => void) => void;
 };
