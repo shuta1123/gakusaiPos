@@ -23,23 +23,40 @@ function CookingInner() {
 
   // 完了処理中の注文IDを同期的に管理（連打/長押しでの二重送信を確実に防ぐ）。
   const inFlightRef = useRef<Set<number>>(new Set());
+  // 完了済みでサーバー反映待ちの注文IDを楽観的に一覧から隠す（再送信窓を塞ぐ）。
+  // ref は同期チェック用、state は再描画用。
+  const completedRef = useRef<Set<number>>(new Set());
+  const [completedIds, setCompletedIds] = useState<Set<number>>(new Set());
+
+  // 完了済み（反映待ち）を除いた表示対象。
+  const displayedOrders = useMemo(
+    () => orders.filter((o) => !completedIds.has(o.id)),
+    [orders, completedIds],
+  );
 
   // 0の品目行は非表示（表示中の注文で合計0の品目を除く）
   const visibleProducts = useMemo(
-    () => products.filter((p) => orders.some((o) => qtyOf(o, p.id) > 0)),
-    [products, orders],
+    () => products.filter((p) => displayedOrders.some((o) => qtyOf(o, p.id) > 0)),
+    [products, displayedOrders],
   );
 
   const complete = useCallback(
     async (order: Order | undefined) => {
-      if (!order || inFlightRef.current.has(order.id)) return;
+      if (
+        !order ||
+        inFlightRef.current.has(order.id) ||
+        completedRef.current.has(order.id)
+      )
+        return;
       inFlightRef.current.add(order.id);
       setCompleting(new Set(inFlightRef.current));
       try {
         setActionError(null);
         await orderApi.updateStatus(order.id, "準備完了");
-        // 一覧から当該注文が消えるまでロックを保持し、反映前の再送信を防ぐ。
-        await refresh();
+        // 成功したら即座に一覧から隠し（楽観的除外）、反映前の再送信を確実に防ぐ。
+        completedRef.current.add(order.id);
+        setCompletedIds(new Set(completedRef.current));
+        refresh();
       } catch (err) {
         setActionError(
           `注文${order.number}の完了に失敗しました: ${
@@ -56,10 +73,10 @@ function CookingInner() {
 
   // スペースキーで先頭（最古）の注文を完了。
   // フォーカスが操作要素にある場合はネイティブ動作（ボタン活性化）に任せる。
-  const ordersRef = useRef(orders);
+  const ordersRef = useRef(displayedOrders);
   useEffect(() => {
-    ordersRef.current = orders;
-  }, [orders]);
+    ordersRef.current = displayedOrders;
+  }, [displayedOrders]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space" && e.key !== " ") return;
@@ -67,7 +84,12 @@ function CookingInner() {
       if (active && active !== document.body) return;
       e.preventDefault();
       const first = ordersRef.current[0];
-      if (first && !inFlightRef.current.has(first.id)) complete(first);
+      if (
+        first &&
+        !inFlightRef.current.has(first.id) &&
+        !completedRef.current.has(first.id)
+      )
+        complete(first);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -75,11 +97,11 @@ function CookingInner() {
 
   const chunks = useMemo(() => {
     const result: Order[][] = [];
-    for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
-      result.push(orders.slice(i, i + CHUNK_SIZE));
+    for (let i = 0; i < displayedOrders.length; i += CHUNK_SIZE) {
+      result.push(displayedOrders.slice(i, i + CHUNK_SIZE));
     }
     return result;
-  }, [orders]);
+  }, [displayedOrders]);
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
@@ -110,9 +132,9 @@ function CookingInner() {
         </p>
       )}
 
-      {loading && orders.length === 0 ? (
+      {loading && displayedOrders.length === 0 ? (
         <p className="p-8 text-center text-sm opacity-60">読み込み中…</p>
-      ) : orders.length === 0 ? (
+      ) : displayedOrders.length === 0 ? (
         <p className="p-8 text-center text-sm opacity-60">
           調理待ちの注文はありません
         </p>
@@ -125,7 +147,7 @@ function CookingInner() {
                   {/* 品目名の見出し列 */}
                   <th className="bg-transparent" />
                   {chunk.map((order) => {
-                    const isHead = order.id === orders[0]?.id; // 全体の先頭
+                    const isHead = order.id === displayedOrders[0]?.id; // 全体の先頭
                     return (
                       <th
                         key={order.id}
