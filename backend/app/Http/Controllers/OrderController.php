@@ -40,6 +40,9 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'source' => ['required', Rule::in(array_keys(Order::SOURCE_RANGES))],
+            // 会計画面のように「作成＝会計完了」を1リクエストで原子的に行うため、
+            // 初期ステータスを任意指定できる（未指定は 注文完了）。
+            'status' => ['sometimes', Rule::in(Order::STATUS_FLOW)],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
@@ -61,7 +64,7 @@ class OrderController extends Controller
             $order = Order::create([
                 'number' => $this->nextNumber($validated['source']),
                 'source' => $validated['source'],
-                'status' => '注文完了',
+                'status' => $validated['status'] ?? '注文完了',
             ]);
 
             foreach ($validated['items'] as $item) {

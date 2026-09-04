@@ -5,7 +5,13 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import { useProducts } from "@/hooks/useProducts";
-import { orderApi, ApiError, type OrderSource, type Product } from "@/lib/api";
+import {
+  orderApi,
+  productApi,
+  ApiError,
+  type OrderSource,
+  type Product,
+} from "@/lib/api";
 import { formatYen } from "@/lib/format";
 
 const REGISTERS: OrderSource[] = ["会計1", "会計2"];
@@ -34,6 +40,10 @@ function CashierInner() {
     [cart],
   );
   const change = received - total;
+
+  // お預かり金額は 0〜999,999 の整数に丸める（小数・指数・Infinity対策）。
+  const clampCash = (v: number) =>
+    !Number.isFinite(v) || v <= 0 ? 0 : Math.min(999999, Math.floor(v));
 
   if (!register || !REGISTERS.includes(register)) {
     return (
@@ -74,7 +84,7 @@ function CashierInner() {
     setPhase("submitting");
     setSubmitError(null);
 
-    const items = Object.entries(cart)
+      const items = Object.entries(cart)
       .filter(([, q]) => q > 0)
       .map(([product_id, quantity]) => ({
         product_id: Number(product_id),
@@ -82,13 +92,32 @@ function CashierInner() {
       }));
 
     try {
-      const order = await orderApi.create({ source: register!, items });
-      await orderApi.updateStatus(order.id, "会計完了");
+      // 作成＝会計完了 を1リクエストで原子的に行う（二段階だと updateStatus 失敗時に
+      // 注文だけ残り二重会計の恐れがあるため）。
+      const order = await orderApi.create({
+        source: register!,
+        items,
+        status: "会計完了",
+      });
       setIssuedNumber(order.number);
       setPhase("done");
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) {
-        setSubmitError(e.message + "。商品状態を更新しました。");
+        // 売り切れ拒否。最新の商品状態を取得し、売り切れ品をカートから除去する。
+        try {
+          const fresh = await productApi.list();
+          const soldOut = new Set(
+            fresh.filter((p) => p.is_sold_out).map((p) => p.id),
+          );
+          setCart((c) => {
+            const next = { ...c };
+            soldOut.forEach((id) => delete next[id]);
+            return next;
+          });
+        } catch {
+          /* 取得失敗時はカートをそのままに */
+        }
+        setSubmitError(e.message + "。売り切れ商品をカートから削除しました。");
         refresh();
       } else {
         setSubmitError(
@@ -193,7 +222,7 @@ function CashierInner() {
                       type="button"
                       onClick={() => decItem(p.id)}
                       className="h-7 w-7 rounded-full border border-black/20 dark:border-white/25"
-                      aria-label="減らす"
+                      aria-label={`${p.name}を減らす`}
                     >
                       −
                     </button>
@@ -202,7 +231,7 @@ function CashierInner() {
                       type="button"
                       onClick={() => addItem(p)}
                       className="h-7 w-7 rounded-full border border-black/20 dark:border-white/25"
-                      aria-label="増やす"
+                      aria-label={`${p.name}を増やす`}
                     >
                       ＋
                     </button>
@@ -227,8 +256,10 @@ function CashierInner() {
                 type="number"
                 inputMode="numeric"
                 min={0}
+                max={999999}
+                step={1}
                 value={received === 0 ? "" : received}
-                onChange={(e) => setReceived(Math.max(0, Number(e.target.value) || 0))}
+                onChange={(e) => setReceived(clampCash(Number(e.target.value)))}
                 placeholder="0"
                 className="rounded-lg border border-black/15 px-3 py-2 text-right text-lg tabular-nums dark:border-white/20"
               />
@@ -237,7 +268,7 @@ function CashierInner() {
                   <button
                     key={amount}
                     type="button"
-                    onClick={() => setReceived((r) => r + amount)}
+                    onClick={() => setReceived((r) => clampCash(r + amount))}
                     className="flex-1 rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/20"
                   >
                     +{formatYen(amount)}

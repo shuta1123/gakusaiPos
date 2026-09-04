@@ -23,15 +23,29 @@ export function useProducts(): UseProductsResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // アンマウント後のsetStateと、古いレスポンスによる上書きを防ぐガード。
+  const aliveRef = useRef(true);
+  const seqRef = useRef(0);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   const fetchProducts = useCallback(async () => {
+    const seq = ++seqRef.current;
+    const stale = () => !aliveRef.current || seq !== seqRef.current;
     try {
       const data = await productApi.list();
+      if (stale()) return;
       setProducts(data);
       setError(null);
     } catch (e) {
+      if (stale()) return;
       setError(e instanceof Error ? e.message : "商品の取得に失敗しました");
     } finally {
-      setLoading(false);
+      if (!stale()) setLoading(false);
     }
   }, []);
 
