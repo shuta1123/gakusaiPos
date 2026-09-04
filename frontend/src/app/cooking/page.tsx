@@ -38,7 +38,8 @@ function CookingInner() {
       try {
         setActionError(null);
         await orderApi.updateStatus(order.id, "準備完了");
-        refresh();
+        // 一覧から当該注文が消えるまでロックを保持し、反映前の再送信を防ぐ。
+        await refresh();
       } catch (err) {
         setActionError(
           `注文${order.number}の完了に失敗しました: ${
@@ -100,7 +101,11 @@ function CookingInner() {
         </p>
       )}
       {actionError && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40">
+        <p
+          role="alert"
+          aria-live="polite"
+          className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40"
+        >
           {actionError}
         </p>
       )}
@@ -131,8 +136,9 @@ function CookingInner() {
                         <button
                           type="button"
                           onClick={() => complete(order)}
+                          disabled={completing.has(order.id)}
                           aria-label={`注文 ${order.number} を完了`}
-                          className={`block w-full p-1 text-left text-[32px] font-bold leading-none tabular-nums ${
+                          className={`block w-full p-1 text-left text-[32px] font-bold leading-none tabular-nums disabled:opacity-40 ${
                             completing.has(order.id) ? "opacity-40" : ""
                           }`}
                           title="タップで完了（準備完了へ）"

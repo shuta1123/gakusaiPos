@@ -12,7 +12,8 @@ type UseOrdersResult = {
   error: string | null;
   /** WebSocket 接続中かどうか（false の間はポーリングで代替） */
   connected: boolean;
-  refresh: () => void;
+  /** 再取得。完了まで待てるよう Promise を返す。 */
+  refresh: () => Promise<void>;
 };
 
 const POLL_INTERVAL_MS = 5000;
