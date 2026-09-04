@@ -14,7 +14,6 @@ class Order extends Model
     public const SOURCE_RANGES = [
         '会計1' => 100,
         '会計2' => 200,
-        'モバイル' => 700,
     ];
 
     /** ステータス遷移順。 */

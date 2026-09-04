@@ -17,9 +17,15 @@ class ProductApiTest extends TestCase
         $this->seed(\Database\Seeders\ProductSeeder::class);
     }
 
-    public function test_商品一覧が取得できる(): void
+    public function test_未認証では商品一覧を取得できない(): void
     {
-        $this->getJson('/api/products')
+        $this->getJson('/api/products')->assertUnauthorized();
+    }
+
+    public function test_認証すれば商品一覧が取得できる(): void
+    {
+        $this->withToken(StaffToken::current())
+            ->getJson('/api/products')
             ->assertOk()
             ->assertJsonCount(4)
             ->assertJsonFragment(['name' => '焼きそば', 'price' => 300]);
