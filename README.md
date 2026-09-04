@@ -120,8 +120,10 @@ gakusaiPos/
 | backend | Laravel API サーバー | 8001 |
 | reverb | Laravel Reverb（WebSocket） | 8080 |
 | queue | キューワーカー（ブロードキャスト配送） | — |
-| db | MySQL 8.0 | 3306 |
+| db | MySQL 8.4 | 3307（ホスト）→ 3306（コンテナ） |
 | redis | Redis 7 | 6379 |
+
+> ホスト側の 3307 はローカルMySQLとの競合回避のため。コンテナ間は `db:3306` で接続。`DB_PORT_HOST` で変更可。
 
 ## セットアップ
 

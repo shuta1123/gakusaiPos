@@ -44,14 +44,16 @@ x-backend-env: &backend-env
 
 services:
   db:
-    image: mysql:8.0
+    image: mysql:8.4
     environment:
       MYSQL_DATABASE: ${DB_DATABASE:-gakusai_pos}
       MYSQL_USER: ${DB_USERNAME:-gakusai}
       MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
     ports:
-      - "3306:3306"
+      # ホスト側でローカルMySQLと競合しないよう 3307 に公開（コンテナ間は db:3306）。
+      # 外部ツール接続先は localhost:3307。変更したい場合は DB_PORT_HOST で上書き。
+      - "${DB_PORT_HOST:-3307}:3306"
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
