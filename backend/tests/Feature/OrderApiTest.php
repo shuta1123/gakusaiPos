@@ -55,6 +55,30 @@ class OrderApiTest extends TestCase
         ]);
     }
 
+    public function test_会計完了ステータスで原子的に作成できる(): void
+    {
+        $product = Product::first();
+
+        $this->withToken(StaffToken::current())->postJson('/api/orders', [
+            'source' => '会計1',
+            'status' => '会計完了',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+            ->assertCreated()
+            ->assertJsonFragment(['status' => '会計完了', 'number' => 100]);
+    }
+
+    public function test_不正なステータスは拒否される(): void
+    {
+        $product = Product::first();
+
+        $this->withToken(StaffToken::current())->postJson('/api/orders', [
+            'source' => '会計1',
+            'status' => '存在しない',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])->assertStatus(422);
+    }
+
     public function test_番号は帯ごとに循環する(): void
     {
         // 会計1帯: 100 から始まる

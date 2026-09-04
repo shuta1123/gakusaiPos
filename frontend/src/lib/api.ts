@@ -120,6 +120,7 @@ export const orderApi = {
   create: (payload: {
     source: OrderSource;
     items: { product_id: number; quantity: number }[];
+    status?: OrderStatus;
   }) => api<Order>("/orders", { method: "POST", body: payload }),
   updateStatus: (id: number, status: OrderStatus) =>
     api<Order>(`/orders/${id}/status`, { method: "PATCH", body: { status } }),

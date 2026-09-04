@@ -30,15 +30,29 @@ export function useOrders(filter: Filter = {}): UseOrdersResult {
   // filter はオブジェクトなので依存を安定化するため個別値で扱う。
   const { status, source } = filter;
 
+  // アンマウント後のsetStateと、古いレスポンスによる上書きを防ぐガード。
+  const aliveRef = useRef(true);
+  const seqRef = useRef(0);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   const fetchOrders = useCallback(async () => {
+    const seq = ++seqRef.current;
+    const stale = () => !aliveRef.current || seq !== seqRef.current;
     try {
       const data = await orderApi.list({ status, source });
+      if (stale()) return;
       setOrders(data);
       setError(null);
     } catch (e) {
+      if (stale()) return;
       setError(e instanceof Error ? e.message : "取得に失敗しました");
     } finally {
-      setLoading(false);
+      if (!stale()) setLoading(false);
     }
   }, [status, source]);
 

@@ -26,8 +26,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     () => false,
   );
 
+  // リダイレクト判定は effect 実行時（クライアント）に実トークンを読む。
+  // フルページロード時、SSRスナップショット(false)でこの effect が先に走っても
+  // localStorage に実トークンがあれば誤って /login へ飛ばさないため。
   useEffect(() => {
-    if (!loggedIn) router.replace("/login");
+    if (getToken() === null) router.replace("/login");
   }, [loggedIn, router]);
 
   if (!loggedIn) {
