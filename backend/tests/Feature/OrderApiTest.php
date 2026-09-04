@@ -18,20 +18,32 @@ class OrderApiTest extends TestCase
         $this->seed(\Database\Seeders\ProductSeeder::class);
     }
 
+    public function test_未認証では注文を作成できない(): void
+    {
+        $product = Product::first();
+
+        $this->postJson('/api/orders', [
+            'source' => '会計1',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])->assertUnauthorized();
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
     public function test_注文を作成できる(): void
     {
         $product = Product::first();
 
-        $response = $this->postJson('/api/orders', [
-            'source' => 'モバイル',
+        $response = $this->withToken(StaffToken::current())->postJson('/api/orders', [
+            'source' => '会計1',
             'items' => [
                 ['product_id' => $product->id, 'quantity' => 2],
             ],
         ]);
 
         $response->assertCreated()
-            ->assertJsonFragment(['source' => 'モバイル', 'status' => '注文完了'])
-            ->assertJsonPath('number', 700);
+            ->assertJsonFragment(['source' => '会計1', 'status' => '注文完了'])
+            ->assertJsonPath('number', 100);
 
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseCount('order_items', 1);
@@ -43,31 +55,18 @@ class OrderApiTest extends TestCase
         ]);
     }
 
-    public function test_未認証では会計注文を作成できない(): void
+    public function test_番号は帯ごとに循環する(): void
     {
-        $product = Product::first();
+        // 会計1帯: 100 から始まる
+        Order::create(['number' => 100, 'source' => '会計1', 'status' => '注文完了']);
+        $this->assertSame(101, app(\App\Http\Controllers\OrderController::class)->nextNumber('会計1'));
 
-        $this->postJson('/api/orders', [
-            'source' => '会計1',
-            'items' => [['product_id' => $product->id, 'quantity' => 1]],
-        ])->assertStatus(422)
-            ->assertJsonValidationErrorFor('source');
+        // 末尾99の次は00に戻る（会計1なら 100）
+        Order::create(['number' => 199, 'source' => '会計1', 'status' => '注文完了']);
+        $this->assertSame(100, app(\App\Http\Controllers\OrderController::class)->nextNumber('会計1'));
 
-        $this->assertDatabaseCount('orders', 0);
-    }
-
-    public function test_スタッフは会計注文を作成できる(): void
-    {
-        $product = Product::first();
-
-        $this->withToken(StaffToken::current())
-            ->postJson('/api/orders', [
-                'source' => '会計1',
-                'items' => [['product_id' => $product->id, 'quantity' => 1]],
-            ])
-            ->assertCreated()
-            ->assertJsonFragment(['source' => '会計1'])
-            ->assertJsonPath('number', 100);
+        // 会計2帯は 200 から
+        $this->assertSame(200, app(\App\Http\Controllers\OrderController::class)->nextNumber('会計2'));
     }
 
     public function test_売り切れ商品は注文できない(): void
@@ -75,27 +74,14 @@ class OrderApiTest extends TestCase
         $product = Product::first();
         $product->update(['is_sold_out' => true]);
 
-        $this->postJson('/api/orders', [
-            'source' => 'モバイル',
+        $this->withToken(StaffToken::current())->postJson('/api/orders', [
+            'source' => '会計1',
             'items' => [
                 ['product_id' => $product->id, 'quantity' => 1],
             ],
         ])->assertStatus(422);
 
         $this->assertDatabaseCount('orders', 0);
-    }
-
-    public function test_番号は帯ごとに循環する(): void
-    {
-        $product = Product::first();
-
-        // 会計1帯: 100 から始まる
-        $first = Order::create(['number' => 100, 'source' => '会計1', 'status' => '注文完了']);
-        $this->assertSame(101, app(\App\Http\Controllers\OrderController::class)->nextNumber('会計1'));
-
-        // 末尾99の次は00に戻る（会計1なら 100）
-        Order::create(['number' => 199, 'source' => '会計1', 'status' => '注文完了']);
-        $this->assertSame(100, app(\App\Http\Controllers\OrderController::class)->nextNumber('会計1'));
     }
 
     public function test_ステータス更新には認証が必要(): void

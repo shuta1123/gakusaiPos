@@ -7,7 +7,6 @@ use App\Events\OrderCreated;
 use App\Events\OrderStatusUpdated;
 use App\Models\Order;
 use App\Models\Product;
-use App\Support\StaffToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,13 +38,8 @@ class OrderController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        // 公開エンドポイント（客用）はモバイル注文のみ許可。会計1/会計2 の発番は
-        // スタッフトークンを持つ場合のみ（会計画面フェーズで使用）。
-        $isStaff = StaffToken::verify($request->bearerToken());
-        $allowedSources = $isStaff ? array_keys(Order::SOURCE_RANGES) : ['モバイル'];
-
         $validated = $request->validate([
-            'source' => ['required', Rule::in($allowedSources)],
+            'source' => ['required', Rule::in(array_keys(Order::SOURCE_RANGES))],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
