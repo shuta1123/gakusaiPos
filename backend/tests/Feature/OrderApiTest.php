@@ -43,6 +43,33 @@ class OrderApiTest extends TestCase
         ]);
     }
 
+    public function test_未認証では会計注文を作成できない(): void
+    {
+        $product = Product::first();
+
+        $this->postJson('/api/orders', [
+            'source' => '会計1',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])->assertStatus(422)
+            ->assertJsonValidationErrorFor('source');
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    public function test_スタッフは会計注文を作成できる(): void
+    {
+        $product = Product::first();
+
+        $this->withToken(StaffToken::current())
+            ->postJson('/api/orders', [
+                'source' => '会計1',
+                'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            ])
+            ->assertCreated()
+            ->assertJsonFragment(['source' => '会計1'])
+            ->assertJsonPath('number', 100);
+    }
+
     public function test_売り切れ商品は注文できない(): void
     {
         $product = Product::first();
