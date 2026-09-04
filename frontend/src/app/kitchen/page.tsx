@@ -16,7 +16,7 @@ function itemSummary(order: Order): string {
 }
 
 function KitchenInner() {
-  // 受け渡し待ち(準備完了) → 呼び出し中 → 受け渡し完了(非表示)
+  // 受け渡し準備(準備完了) → 呼び出し中 → 受け渡し完了(非表示)
   const waiting = useOrders({ status: "準備完了" });
   const calling = useOrders({ status: "呼び出し中" });
   const waitingRefresh = waiting.refresh;
@@ -119,10 +119,10 @@ function KitchenInner() {
         </p>
       )}
 
-      {/* 受け渡し待ち → タップで呼び出し */}
+      {/* 受け渡し準備 → タップで呼び出し */}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold opacity-70">
-          受け渡し待ち（{displayedWaiting.length}）
+          受け渡し準備（{displayedWaiting.length}）
         </h2>
         {displayedWaiting.length === 0 ? (
           <p className="p-6 text-center text-sm opacity-50">ありません</p>
