@@ -182,6 +182,18 @@ class OrderApiTest extends TestCase
         $create('会計1')->assertJsonPath('number', 101);
     }
 
+    public function test_キャンセル履歴を絞り込み取得できる(): void
+    {
+        Order::create(['number' => 101, 'source' => '会計1', 'status' => 'キャンセル']);
+        Order::create(['number' => 102, 'source' => '会計1', 'status' => '会計完了']);
+
+        $this->withToken(StaffToken::current())
+            ->getJson('/api/orders?status='.rawurlencode('キャンセル'))
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonFragment(['number' => 101, 'status' => 'キャンセル']);
+    }
+
     public function test_キャンセル済みはステータスを戻せない(): void
     {
         $order = Order::create(['number' => 101, 'source' => '会計1', 'status' => 'キャンセル']);

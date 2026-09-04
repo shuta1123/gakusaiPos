@@ -22,7 +22,7 @@ class OrderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['sometimes', Rule::in(Order::STATUS_FLOW)],
+            'status' => ['sometimes', Rule::in(Order::FILTERABLE_STATUSES)],
             'source' => ['sometimes', Rule::in(array_keys(Order::SOURCE_RANGES))],
         ]);
 
@@ -148,18 +148,23 @@ class OrderController extends Controller
             if ($locked === null) {
                 return null;
             }
-            if ($locked->status !== Order::STATUS_CANCELLED) {
+            $justCancelled = $locked->status !== Order::STATUS_CANCELLED;
+            if ($justCancelled) {
                 $locked->update(['status' => Order::STATUS_CANCELLED]);
             }
 
-            return $locked;
+            return ['order' => $locked, 'justCancelled' => $justCancelled];
         });
 
         if ($cancelled === null) {
             return response()->json(['message' => '注文が見つかりません'], 404);
         }
 
-        broadcast(new OrderCancelled($cancelled->id, $cancelled->number))->toOthers();
+        // 実際にキャンセルへ遷移したときだけ通知（二重DELETEで無駄な再取得を防ぐ）。
+        if ($cancelled['justCancelled']) {
+            $order = $cancelled['order'];
+            broadcast(new OrderCancelled($order->id, $order->number))->toOthers();
+        }
 
         return response()->json(['message' => 'キャンセルしました']);
     }
