@@ -8,6 +8,28 @@ if [ ! -f .env ]; then
     cp .env.example .env
 fi
 
+# コンテナ環境変数(compose由来)を .env に反映する。
+# `php artisan serve`(php -S) は Docker の環境変数を直接読めない場合があるため、
+# 確実に読める .env ファイルへ書き込む（CORS/APP_KEY等をコンテナ間で一致させる）。
+sync_env() {
+    key="$1"
+    val="$(printenv "$key" 2>/dev/null || true)"
+    [ -z "$val" ] && return 0
+    if grep -q "^${key}=" .env; then
+        sed -i "s|^${key}=.*|${key}=${val}|" .env
+    else
+        printf '%s=%s\n' "$key" "$val" >> .env
+    fi
+}
+for k in APP_ENV APP_DEBUG APP_URL APP_KEY APP_LOCALE \
+         DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
+         REDIS_CLIENT REDIS_HOST REDIS_PORT CACHE_STORE QUEUE_CONNECTION SESSION_DRIVER \
+         BROADCAST_CONNECTION REVERB_APP_ID REVERB_APP_KEY REVERB_APP_SECRET \
+         REVERB_HOST REVERB_PORT REVERB_SCHEME REVERB_SERVER_HOST REVERB_SERVER_PORT \
+         STAFF_PASSWORD CORS_ALLOWED_ORIGINS; do
+    sync_env "$k"
+done
+
 # APP_KEY 未設定なら生成
 if ! grep -q "^APP_KEY=base64:" .env; then
     php artisan key:generate --force

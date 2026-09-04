@@ -6,6 +6,10 @@
 #   3) 前段の Nginx が pos.shutay.com を各コンテナへリバースプロキシ（nginx/pos.shutay.com.conf）
 #
 # ポートは 127.0.0.1 のみに公開し、外部公開は Nginx 経由に限定する。
+#
+# 開発用 docker-compose.yml とイメージ/コンテナ/ボリュームを共有しないよう
+# 専用のプロジェクト名を付ける（同一ホストで両方使う場合の衝突防止）。
+name: gakusaipos-prod
 
 x-backend-env: &backend-env
   APP_ENV: production
@@ -36,7 +40,8 @@ x-backend-env: &backend-env
   REVERB_SERVER_HOST: 0.0.0.0
   REVERB_SERVER_PORT: "8080"
   STAFF_PASSWORD: ${STAFF_PASSWORD:?STAFF_PASSWORD を .env に設定してください}
-  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+  # 単一ドメイン本番はCORS不要。既定は本番オリジンのみ（全許可にはしない）。
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://pos.shutay.com}
 
 services:
   db:

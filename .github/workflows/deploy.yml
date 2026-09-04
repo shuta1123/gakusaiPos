@@ -33,7 +33,7 @@ jobs:
             cd "${{ secrets.DEPLOY_PATH }}"
             git fetch --all
             git reset --hard origin/main
-            docker compose build
-            docker compose up -d
-            docker compose exec -T backend php artisan migrate --force
-            docker compose exec -T backend php artisan config:cache
+            # 本番構成でデプロイ（マイグレーションは backend の entrypoint が実行）
+            docker compose -f compose.prod.yml config --quiet
+            docker compose -f compose.prod.yml up -d --build --remove-orphans
+            docker compose -f compose.prod.yml ps

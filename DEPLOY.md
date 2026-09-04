@@ -48,20 +48,17 @@ echo "REVERB_APP_SECRET=$(openssl rand -hex 16)"
 ### 3. Nginx + Let's Encrypt（このアプリ用は未設定なので新規）
 ```bash
 sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx
-sudo mkdir -p /var/www/certbot
 
-# アプリ用の設定を配置
+# アプリ用の設定（HTTP・proxyルール）を配置
 sudo cp nginx/pos.shutay.com.conf /etc/nginx/sites-available/pos.shutay.com
 sudo ln -sf /etc/nginx/sites-available/pos.shutay.com /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
-
-# まず証明書を取得（nginxプラグインが80番で検証し、443設定も可能に）
-sudo certbot certonly --nginx -d pos.shutay.com
-
-# 証明書取得後、設定を検証して反映
 sudo nginx -t && sudo systemctl reload nginx
+
+# 証明書取得＋HTTPS自動設定（certbotが443ブロックと80→443リダイレクトを追記、自動更新も設定）
+sudo certbot --nginx -d pos.shutay.com
 ```
-> `certbot certonly` は証明書のみ取得。`nginx/pos.shutay.com.conf` は `/etc/letsencrypt/live/pos.shutay.com/` の証明書を参照済み。自動更新はcertbotのtimerで有効。
+> `certbot --nginx` は ACME 検証を自身で処理し（アプリ未起動でもOK）、この server ブロックに `listen 443 ssl` と証明書行を追記、80→443リダイレクトも作成。更新は certbot.timer が nginx 認証で無停止実行。
 
 ### 4. 起動（ビルド込み）
 ```bash
@@ -106,7 +103,7 @@ NEXT_PUBLIC_API_BASE=http://<MAC_IP>:8001/api
 NEXT_PUBLIC_REVERB_HOST=<MAC_IP>
 NEXT_PUBLIC_REVERB_PORT=8080
 NEXT_PUBLIC_REVERB_SCHEME=http
-CORS_ALLOWED_ORIGINS=*
+CORS_ALLOWED_ORIGINS=http://<MAC_IP>:3001
 STAFF_PASSWORD=gakusai2026
 EOF
 ```
