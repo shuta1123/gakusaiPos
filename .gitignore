@@ -1,0 +1,11 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# エディタ
+.idea/
+.vscode/
+*.swp
+
+# 環境変数（各サブプロジェクトの .gitignore でも除外）
+.env

@@ -1,0 +1,143 @@
+# 学祭POS ローカル開発用 Docker 構成
+#
+# services:
+#   frontend : Next.js  → 3001
+#   backend  : Laravel  → 8001（APIサーバー）
+#   reverb   : Laravel Reverb（WebSocket）→ 8080  ※backendイメージを再利用
+#   queue    : キューワーカー（ブロードキャスト配送）→ backendイメージを再利用
+#   db       : MySQL    → 3306
+#   redis    : Redis    → 6379
+
+# PHP系3サービス共通の環境変数。
+# ここに定義した実環境変数は Laravel の .env より優先される。
+# 値は ${VAR:-default} 形式で、ルートの .env（compose が自動読込）や実環境変数で上書き可能。
+# 本番では必ず APP_KEY / STAFF_PASSWORD / DB_PASSWORD / REVERB_APP_SECRET と
+# APP_ENV=production / APP_DEBUG=false を .env で上書きすること（.env.example 参照）。
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-local}
+  APP_DEBUG: ${APP_DEBUG:-true}
+  APP_KEY: ${APP_KEY:-base64:+7BBJ1I+KgLR2mO9NxCYxEuQtlosGik35zlsmz6KE2w=}
+  DB_CONNECTION: mysql
+  DB_HOST: db
+  DB_PORT: "3306"
+  DB_DATABASE: ${DB_DATABASE:-gakusai_pos}
+  DB_USERNAME: ${DB_USERNAME:-gakusai}
+  DB_PASSWORD: ${DB_PASSWORD:-secret}
+  REDIS_CLIENT: predis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  SESSION_DRIVER: redis
+  BROADCAST_CONNECTION: reverb
+  REVERB_APP_ID: ${REVERB_APP_ID:-891732}
+  REVERB_APP_KEY: ${REVERB_APP_KEY:-n93se9bles5oeqvj1gfq}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET:-fyxsrmee39wjrq4qgipu}
+  # サーバー側（backend/queue）が Reverb へイベント送信する際の接続先はサービス名 "reverb"。
+  # ブラウザ(Echo)の接続先は frontend の NEXT_PUBLIC_REVERB_HOST（=localhost）で別管理。
+  REVERB_HOST: ${REVERB_HOST:-reverb}
+  REVERB_PORT: "8080"
+  REVERB_SCHEME: http
+  REVERB_SERVER_HOST: 0.0.0.0
+  REVERB_SERVER_PORT: "8080"
+  STAFF_PASSWORD: ${STAFF_PASSWORD:-gakusai2026}
+
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-gakusai_pos}
+      MYSQL_USER: ${DB_USERNAME:-gakusai}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    ports:
+      # ホスト側でローカルMySQLと競合しないよう 3307 に公開（コンテナ間は db:3306）。
+      # 外部ツール接続先は localhost:3307。変更したい場合は DB_PORT_HOST で上書き。
+      - "${DB_PORT_HOST:-3307}:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  reverb:
+    build: ./backend
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+    environment:
+      <<: *backend-env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  queue:
+    build: ./backend
+    command: ["php", "artisan", "queue:work", "--tries=3"]
+    environment:
+      <<: *backend-env
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      # 本番（pos.shutay.com）では .env で実際の公開URL/ホストに上書きすること。
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8001/api}
+      NEXT_PUBLIC_REVERB_APP_KEY: ${REVERB_APP_KEY:-n93se9bles5oeqvj1gfq}
+      NEXT_PUBLIC_REVERB_HOST: ${NEXT_PUBLIC_REVERB_HOST:-localhost}
+      NEXT_PUBLIC_REVERB_PORT: ${NEXT_PUBLIC_REVERB_PORT:-8080}
+      NEXT_PUBLIC_REVERB_SCHEME: ${NEXT_PUBLIC_REVERB_SCHEME:-http}
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
+  backend_vendor:
+  frontend_node_modules:
+  frontend_next:

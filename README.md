@@ -92,6 +92,7 @@
 | order_id | INT | ordersへの外部キー |
 | product_id | INT | productsへの外部キー |
 | quantity | INT | 数量 |
+| unit_price | INT | 注文時点の単価スナップショット |
 
 **products**
 
@@ -101,13 +102,67 @@
 | name | VARCHAR | 商品名 |
 | price | INT | 価格 |
 
+## ディレクトリ構成
+
+```
+gakusaiPos/
+├── frontend/   Next.js (TypeScript) … ポート 3001
+├── backend/    Laravel (PHP)         … ポート 8001（API）
+├── docker-compose.yml
+└── .github/workflows/  CI/CD
+```
+
+## サービス構成（docker compose）
+
+| サービス | 内容 | ポート |
+|---|---|---|
+| frontend | Next.js 開発サーバー | 3001 |
+| backend | Laravel API サーバー | 8001 |
+| reverb | Laravel Reverb（WebSocket） | 8080 |
+| queue | キューワーカー（ブロードキャスト配送） | — |
+| db | MySQL 8.4 | 3307（ホスト）→ 3306（コンテナ） |
+| redis | Redis 7 | 6379 |
+
+> ホスト側の 3307 はローカルMySQLとの競合回避のため。コンテナ間は `db:3306` で接続。`DB_PORT_HOST` で変更可。
+
 ## セットアップ
 
 ```bash
 git clone https://github.com/shuta1123/gakusaiPos.git
 cd gakusaiPos
-docker compose up -d
+docker compose up -d --build
 ```
+
+起動後:
+
+- フロント: http://localhost:3001
+- API: http://localhost:8001/api
+- WebSocket: ws://localhost:8080
+
+商品データは backend の起動時に自動でマイグレーション・シードされます。
+スタッフ共通パスワードの初期値は `gakusai2026`（`docker-compose.yml` / `backend/.env` の `STAFF_PASSWORD`）。
+
+## API エンドポイント
+
+| メソッド | パス | 認証 | 説明 |
+|---|---|---|---|
+| POST | `/api/auth/login` | なし | 共通パスワードでログイン |
+| POST | `/api/auth/logout` | 要 | ログアウト |
+| GET | `/api/products` | なし | 商品一覧 |
+| PATCH | `/api/products/{id}` | 要 | 売り切れ設定など |
+| GET | `/api/orders` | 要 | 注文一覧（status/source 絞り込み可） |
+| POST | `/api/orders` | なし | 注文作成 |
+| GET | `/api/orders/{id}` | なし | 注文詳細 |
+| PATCH | `/api/orders/{id}/status` | 要 | ステータス更新 |
+| DELETE | `/api/orders/{id}` | 要 | 注文キャンセル |
+| GET | `/api/orders/next-number` | 要 | 次の注文番号（`?source=`） |
+
+認証は共通パスワード由来の Bearer トークン方式（無期限）。`/order`（客用）が使う API のみ認証なし。
+
+## WebSocket イベント
+
+`orders` チャンネル: `order.created` / `order.status_updated` / `order.cancelled`
+`products` チャンネル: `product.updated`
 
 ## 支払い
 
