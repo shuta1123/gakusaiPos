@@ -104,20 +104,35 @@ class OrderController extends Controller
             'status' => ['required', Rule::in(Order::STATUS_FLOW)],
         ]);
 
-        // 終端「受け渡し完了」からの復帰は禁止。番号が解放・再利用された後に
-        // 復帰すると同一番号がアクティブで二重に存在し得るため。
-        if ($order->status === '受け渡し完了' && $validated['status'] !== '受け渡し完了') {
+        // 行ロックで「判定→更新」を原子的に行う。終端「受け渡し完了」からの復帰は
+        // 禁止（番号が解放・再利用された後に復帰すると同一番号が二重にアクティブ化するため）。
+        // 並行更新でも stale read でガードを擦り抜けないよう lockForUpdate する。
+        $updated = DB::transaction(function () use ($order, $validated) {
+            $locked = Order::whereKey($order->getKey())->lockForUpdate()->first();
+            if ($locked === null) {
+                return null;
+            }
+            if ($locked->status === '受け渡し完了' && $validated['status'] !== '受け渡し完了') {
+                return false;
+            }
+            $locked->update(['status' => $validated['status']]);
+
+            return $locked;
+        });
+
+        if ($updated === false) {
             return response()->json([
                 'message' => '受け渡し完了の注文はステータスを戻せません',
             ], 422);
         }
+        if ($updated === null) {
+            return response()->json(['message' => '注文が見つかりません'], 404);
+        }
 
-        $order->update(['status' => $validated['status']]);
-        $order->load('items.product');
+        $updated->load('items.product');
+        broadcast(new OrderStatusUpdated($updated))->toOthers();
 
-        broadcast(new OrderStatusUpdated($order))->toOthers();
-
-        return response()->json($order);
+        return response()->json($updated);
     }
 
     /**
