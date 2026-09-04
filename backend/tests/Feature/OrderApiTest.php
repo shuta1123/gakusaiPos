@@ -157,6 +157,52 @@ class OrderApiTest extends TestCase
         $this->assertDatabaseCount('orders', 0);
     }
 
+    public function test_キャンセルは論理削除で番号を解放し再利用できる(): void
+    {
+        $product = Product::first();
+        $create = fn (string $source) => $this->withToken(StaffToken::current())
+            ->postJson('/api/orders', [
+                'source' => $source,
+                'status' => '会計完了',
+                'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            ]);
+
+        $orderId = $create('会計1')->assertJsonPath('number', 101)->json('id');
+
+        // キャンセル（DELETE）→ 削除ではなく status=キャンセル で残る
+        $this->withToken(StaffToken::current())
+            ->deleteJson("/api/orders/{$orderId}")
+            ->assertOk();
+
+        $this->assertDatabaseHas('orders', ['id' => $orderId, 'status' => 'キャンセル']);
+        $this->assertDatabaseCount('orders', 1); // 物理削除されていない
+
+        // 番号 101 は解放され、再利用できる
+        \App\Models\Counter::where('key', 'order_seq:会計1')->update(['value' => 0]);
+        $create('会計1')->assertJsonPath('number', 101);
+    }
+
+    public function test_キャンセル履歴を絞り込み取得できる(): void
+    {
+        Order::create(['number' => 101, 'source' => '会計1', 'status' => 'キャンセル']);
+        Order::create(['number' => 102, 'source' => '会計1', 'status' => '会計完了']);
+
+        $this->withToken(StaffToken::current())
+            ->getJson('/api/orders?status='.rawurlencode('キャンセル'))
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonFragment(['number' => 101, 'status' => 'キャンセル']);
+    }
+
+    public function test_キャンセル済みはステータスを戻せない(): void
+    {
+        $order = Order::create(['number' => 101, 'source' => '会計1', 'status' => 'キャンセル']);
+
+        $this->withToken(StaffToken::current())
+            ->patchJson("/api/orders/{$order->id}/status", ['status' => '準備完了'])
+            ->assertStatus(422);
+    }
+
     public function test_受け渡し完了からは戻せない(): void
     {
         $order = Order::create(['number' => 101, 'source' => '会計1', 'status' => '受け渡し完了']);

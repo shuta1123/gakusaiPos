@@ -88,7 +88,7 @@
 | id | INT | 主キー |
 | number | INT | 注文番号（00〜99） |
 | source | ENUM | 会計1 / 会計2 |
-| status | ENUM | 注文完了 / 会計完了 / 準備完了 / 受け渡し完了 |
+| status | ENUM | 注文完了 / 会計完了 / 準備完了 / 受け渡し完了 / キャンセル |
 | created_at | TIMESTAMP | 作成日時 |
 
 **order_items**
@@ -161,7 +161,7 @@ docker compose up -d --build
 | POST | `/api/orders` | 要 | 注文作成 |
 | GET | `/api/orders/{id}` | 要 | 注文詳細 |
 | PATCH | `/api/orders/{id}/status` | 要 | ステータス更新 |
-| DELETE | `/api/orders/{id}` | 要 | 注文キャンセル |
+| DELETE | `/api/orders/{id}` | 要 | 注文キャンセル（論理削除・status=キャンセル） |
 | GET | `/api/orders/next-number` | 要 | 次の注文番号（`?source=`） |
 
 認証は共通パスワード由来の Bearer トークン方式（無期限）。ログイン以外の全 API がスタッフ認証必須。

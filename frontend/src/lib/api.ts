@@ -71,7 +71,12 @@ export type Product = {
 };
 
 export type OrderSource = "会計1" | "会計2";
-export type OrderStatus = "注文完了" | "会計完了" | "準備完了" | "受け渡し完了";
+export type OrderStatus =
+  | "注文完了"
+  | "会計完了"
+  | "準備完了"
+  | "受け渡し完了"
+  | "キャンセル";
 
 export type OrderItem = {
   id: number;

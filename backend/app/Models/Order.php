@@ -23,13 +23,22 @@ class Order extends Model
     /** 番号を占有し続けるステータス（受け渡し完了になれば解放）。 */
     public const ACTIVE_STATUSES = ['注文完了', '会計完了', '準備完了'];
 
-    /** ステータス遷移順。 */
+    /** ステータス遷移順（前進フロー）。キャンセルはこの流れの外の終端。 */
     public const STATUS_FLOW = [
         '注文完了',
         '会計完了',
         '準備完了',
         '受け渡し完了',
     ];
+
+    /** 論理キャンセルのステータス。 */
+    public const STATUS_CANCELLED = 'キャンセル';
+
+    /** 終端ステータス（ここからは戻せない＝番号が解放済みのため）。 */
+    public const TERMINAL_STATUSES = ['受け渡し完了', 'キャンセル'];
+
+    /** 一覧の絞り込みで指定可能なステータス（キャンセル履歴も取得可能にする）。 */
+    public const FILTERABLE_STATUSES = ['注文完了', '会計完了', '準備完了', '受け渡し完了', 'キャンセル'];
 
     protected $fillable = [
         'number',

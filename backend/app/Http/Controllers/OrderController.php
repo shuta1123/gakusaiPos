@@ -22,7 +22,7 @@ class OrderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['sometimes', Rule::in(Order::STATUS_FLOW)],
+            'status' => ['sometimes', Rule::in(Order::FILTERABLE_STATUSES)],
             'source' => ['sometimes', Rule::in(array_keys(Order::SOURCE_RANGES))],
         ]);
 
@@ -112,7 +112,8 @@ class OrderController extends Controller
             if ($locked === null) {
                 return null;
             }
-            if ($locked->status === '受け渡し完了' && $validated['status'] !== '受け渡し完了') {
+            if (in_array($locked->status, Order::TERMINAL_STATUSES, true)
+                && $locked->status !== $validated['status']) {
                 return false;
             }
             $locked->update(['status' => $validated['status']]);
@@ -122,7 +123,7 @@ class OrderController extends Controller
 
         if ($updated === false) {
             return response()->json([
-                'message' => '受け渡し完了の注文はステータスを戻せません',
+                'message' => '受け渡し完了・キャンセル済みの注文はステータスを戻せません',
             ], 422);
         }
         if ($updated === null) {
@@ -136,15 +137,34 @@ class OrderController extends Controller
     }
 
     /**
-     * 注文キャンセル（削除）。
+     * 注文キャンセル（論理キャンセル）。
+     * 注文は削除せず status=キャンセル にして履歴を残す。キャンセルは
+     * ACTIVE_STATUSES 外なので番号は解放され再利用可能になる。
      */
     public function destroy(Order $order): JsonResponse
     {
-        $id = $order->id;
-        $number = $order->number;
-        $order->delete();
+        $cancelled = DB::transaction(function () use ($order) {
+            $locked = Order::whereKey($order->getKey())->lockForUpdate()->first();
+            if ($locked === null) {
+                return null;
+            }
+            $justCancelled = $locked->status !== Order::STATUS_CANCELLED;
+            if ($justCancelled) {
+                $locked->update(['status' => Order::STATUS_CANCELLED]);
+            }
 
-        broadcast(new OrderCancelled($id, $number))->toOthers();
+            return ['order' => $locked, 'justCancelled' => $justCancelled];
+        });
+
+        if ($cancelled === null) {
+            return response()->json(['message' => '注文が見つかりません'], 404);
+        }
+
+        // 実際にキャンセルへ遷移したときだけ通知（二重DELETEで無駄な再取得を防ぐ）。
+        if ($cancelled['justCancelled']) {
+            $order = $cancelled['order'];
+            broadcast(new OrderCancelled($order->id, $order->number))->toOthers();
+        }
 
         return response()->json(['message' => 'キャンセルしました']);
     }
