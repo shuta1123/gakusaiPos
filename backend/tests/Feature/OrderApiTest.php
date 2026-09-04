@@ -142,6 +142,47 @@ class OrderApiTest extends TestCase
         $create('会計2')->assertJsonPath('number', 201);
     }
 
+    public function test_割引を指定して注文できる(): void
+    {
+        $product = Product::first(); // 焼きそば 300
+
+        $this->withToken(StaffToken::current())->postJson('/api/orders', [
+            'source' => '会計1',
+            'status' => '会計完了',
+            'discount' => 100,
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])
+            ->assertCreated()
+            ->assertJsonFragment(['discount' => 100]);
+    }
+
+    public function test_割引は小計を超えない(): void
+    {
+        $product = Product::first(); // 300
+
+        // 小計300に対し割引1000を指定 → 300に丸められる
+        $this->withToken(StaffToken::current())->postJson('/api/orders', [
+            'source' => '会計1',
+            'status' => '会計完了',
+            'discount' => 1000,
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+            ->assertCreated()
+            ->assertJsonFragment(['discount' => 300]);
+    }
+
+    public function test_呼び出し中を経由して受け渡し完了にできる(): void
+    {
+        $order = Order::create(['number' => 101, 'source' => '会計1', 'status' => '準備完了']);
+        $token = StaffToken::current();
+
+        $this->withToken($token)->patchJson("/api/orders/{$order->id}/status", ['status' => '呼び出し中'])
+            ->assertOk()->assertJsonFragment(['status' => '呼び出し中']);
+
+        $this->withToken($token)->patchJson("/api/orders/{$order->id}/status", ['status' => '受け渡し完了'])
+            ->assertOk()->assertJsonFragment(['status' => '受け渡し完了']);
+    }
+
     public function test_売り切れ商品は注文できない(): void
     {
         $product = Product::first();

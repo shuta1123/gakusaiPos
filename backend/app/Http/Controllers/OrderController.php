@@ -45,6 +45,7 @@ class OrderController extends Controller
             // 会計画面のように「作成＝会計完了」を1リクエストで原子的に行うため、
             // 初期ステータスを任意指定できる（未指定は 注文完了）。
             'status' => ['sometimes', Rule::in(Order::STATUS_FLOW)],
+            'discount' => ['sometimes', 'integer', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
@@ -62,11 +63,17 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($validated, $products) {
+        // 割引は小計を超えないように丸める（合計がマイナスにならないように）。
+        $subtotal = collect($validated['items'])
+            ->sum(fn ($item) => $products[$item['product_id']]->price * $item['quantity']);
+        $discount = min((int) ($validated['discount'] ?? 0), $subtotal);
+
+        $order = DB::transaction(function () use ($validated, $products, $discount) {
             $order = Order::create([
                 'number' => $this->allocateNumber($validated['source']),
                 'source' => $validated['source'],
                 'status' => $validated['status'] ?? '注文完了',
+                'discount' => $discount,
             ]);
 
             foreach ($validated['items'] as $item) {

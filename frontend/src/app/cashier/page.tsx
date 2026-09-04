@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
@@ -15,7 +15,7 @@ import {
 import { formatYen } from "@/lib/format";
 
 const REGISTERS: OrderSource[] = ["会計1", "会計2"];
-const QUICK_CASH = [500, 1000, 5000];
+const MAX_CASH = 999999;
 
 type Cart = Record<number, number>; // productId -> quantity
 
@@ -26,41 +26,35 @@ function CashierInner() {
 
   const [cart, setCart] = useState<Cart>({});
   const [received, setReceived] = useState(0);
+  const [discount, setDiscount] = useState(0);
+  const [adminMode, setAdminMode] = useState(false);
   const [phase, setPhase] = useState<"cart" | "submitting" | "done">("cart");
   const [issuedNumber, setIssuedNumber] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const total = useMemo(
-    () =>
-      products.reduce((sum, p) => sum + p.price * (cart[p.id] ?? 0), 0),
+  const subtotal = useMemo(
+    () => products.reduce((sum, p) => sum + p.price * (cart[p.id] ?? 0), 0),
     [products, cart],
   );
   const itemCount = useMemo(
     () => Object.values(cart).reduce((a, b) => a + b, 0),
     [cart],
   );
-  const change = received - total;
+  const effectiveDiscount = Math.min(discount, subtotal);
+  const payable = Math.max(0, subtotal - effectiveDiscount);
+  const change = received - payable;
 
-  // お預かり金額は 0〜999,999 の整数に丸める（小数・指数・Infinity対策）。
   const clampCash = (v: number) =>
-    !Number.isFinite(v) || v <= 0 ? 0 : Math.min(999999, Math.floor(v));
+    !Number.isFinite(v) || v <= 0 ? 0 : Math.min(MAX_CASH, Math.floor(v));
 
-  if (!register || !REGISTERS.includes(register)) {
-    return (
-      <main className="mx-auto flex max-w-md flex-1 flex-col justify-center gap-4 p-8 text-center">
-        <h1 className="text-xl font-bold">レジが指定されていません</h1>
-        <p className="text-sm opacity-70">画面選択から会計1／会計2を選んでください。</p>
-        <Link href="/select" className="text-sm underline opacity-80">
-          ← 画面選択へ
-        </Link>
-      </main>
-    );
-  }
+  const canCheckout =
+    itemCount > 0 && change >= 0 && phase !== "submitting" && !adminMode;
 
-  function addItem(p: Product) {
+  const addItem = useCallback((p: Product) => {
     if (p.is_sold_out) return;
     setCart((c) => ({ ...c, [p.id]: (c[p.id] ?? 0) + 1 }));
-  }
+  }, []);
+
   function decItem(id: number) {
     setCart((c) => {
       const next = { ...c };
@@ -74,17 +68,20 @@ function CashierInner() {
   function resetSale() {
     setCart({});
     setReceived(0);
+    setDiscount(0);
     setIssuedNumber(null);
     setSubmitError(null);
     setPhase("cart");
   }
 
-  async function handleCheckout() {
-    if (itemCount === 0 || change < 0 || phase === "submitting") return;
+  const handleCheckout = useCallback(async () => {
+    if (itemCount === 0 || change < 0 || phase === "submitting" || adminMode) {
+      return;
+    }
     setPhase("submitting");
     setSubmitError(null);
 
-      const items = Object.entries(cart)
+    const items = Object.entries(cart)
       .filter(([, q]) => q > 0)
       .map(([product_id, quantity]) => ({
         product_id: Number(product_id),
@@ -92,18 +89,16 @@ function CashierInner() {
       }));
 
     try {
-      // 作成＝会計完了 を1リクエストで原子的に行う（二段階だと updateStatus 失敗時に
-      // 注文だけ残り二重会計の恐れがあるため）。
       const order = await orderApi.create({
         source: register!,
         items,
         status: "会計完了",
+        discount: effectiveDiscount,
       });
       setIssuedNumber(order.number);
       setPhase("done");
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) {
-        // 売り切れ拒否。最新の商品状態を取得し、売り切れ品をカートから除去する。
         try {
           const fresh = await productApi.list();
           const soldOut = new Set(
@@ -115,17 +110,78 @@ function CashierInner() {
             return next;
           });
         } catch {
-          /* 取得失敗時はカートをそのままに */
+          /* noop */
         }
         setSubmitError(e.message + "。売り切れ商品をカートから削除しました。");
         refresh();
       } else {
-        setSubmitError(
-          e instanceof Error ? e.message : "会計処理に失敗しました",
-        );
+        setSubmitError(e instanceof Error ? e.message : "会計処理に失敗しました");
       }
       setPhase("cart");
     }
+  }, [
+    itemCount,
+    change,
+    phase,
+    adminMode,
+    cart,
+    register,
+    effectiveDiscount,
+    refresh,
+  ]);
+
+  // テンキー／物理キーボードでお預かりに数字入力、Enterで会計完了。
+  useEffect(() => {
+    if (phase !== "cart" || adminMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const active = document.activeElement;
+      // 入力欄（割引・価格編集）にフォーカス中はネイティブ動作に任せる。
+      if (active && active.tagName === "INPUT") return;
+      if (e.key >= "0" && e.key <= "9") {
+        e.preventDefault();
+        setReceived((r) => clampCash(r * 10 + Number(e.key)));
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        setReceived((r) => Math.floor(r / 10));
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        handleCheckout();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, adminMode, handleCheckout]);
+
+  async function toggleSoldOut(p: Product) {
+    try {
+      await productApi.update(p.id, { is_sold_out: !p.is_sold_out });
+      refresh();
+    } catch {
+      /* noop */
+    }
+  }
+
+  async function savePrice(p: Product, value: string) {
+    const price = Math.floor(Number(value));
+    if (!Number.isFinite(price) || price < 0 || price === p.price) return;
+    try {
+      await productApi.update(p.id, { price });
+      refresh();
+    } catch {
+      /* noop */
+    }
+  }
+
+  if (!register || !REGISTERS.includes(register)) {
+    return (
+      <main className="mx-auto flex max-w-md flex-1 flex-col justify-center gap-4 p-8 text-center">
+        <h1 className="text-xl font-bold">レジが指定されていません</h1>
+        <p className="text-sm opacity-70">画面選択から会計1／会計2を選んでください。</p>
+        <Link href="/select" className="text-sm underline opacity-80">
+          ← 画面選択へ
+        </Link>
+      </main>
+    );
   }
 
   // 会計完了後の番号表示
@@ -137,7 +193,11 @@ function CashierInner() {
           <p className="text-8xl font-bold tabular-nums">{issuedNumber}</p>
         </div>
         <div className="text-sm opacity-70">
-          <p>合計 {formatYen(total)}／お預かり {formatYen(received)}</p>
+          <p>
+            合計 {formatYen(subtotal)}
+            {effectiveDiscount > 0 && `／割引 -${formatYen(effectiveDiscount)}`}
+          </p>
+          <p>お会計 {formatYen(payable)}／お預かり {formatYen(received)}</p>
           <p className="text-lg font-semibold opacity-100">
             お釣り {formatYen(change)}
           </p>
@@ -153,15 +213,33 @@ function CashierInner() {
     );
   }
 
+  const keypad = ["7", "8", "9", "4", "5", "6", "1", "2", "3"];
+
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 p-4 sm:p-6">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold">
-          会計 <span className="rounded bg-black/10 px-2 py-0.5 text-sm dark:bg-white/15">{register}</span>
+          会計{" "}
+          <span className="rounded bg-black/10 px-2 py-0.5 text-sm dark:bg-white/15">
+            {register}
+          </span>
         </h1>
-        <Link href="/select" className="text-sm underline opacity-70">
-          画面選択へ
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setAdminMode((v) => !v)}
+            className={`rounded-lg border px-3 py-1.5 text-sm ${
+              adminMode
+                ? "border-amber-500 bg-amber-500 text-white"
+                : "border-black/15 dark:border-white/20"
+            }`}
+          >
+            {adminMode ? "管理者モード ON" : "管理者モード"}
+          </button>
+          <Link href="/select" className="text-sm underline opacity-70">
+            画面選択へ
+          </Link>
+        </div>
       </header>
 
       {error && (
@@ -177,28 +255,66 @@ function CashierInner() {
             <p className="p-8 text-center text-sm opacity-60">読み込み中…</p>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {products.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  disabled={p.is_sold_out}
-                  onClick={() => addItem(p)}
-                  className="relative flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border border-black/15 p-3 text-center transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/10"
-                >
-                  <span className="font-medium">{p.name}</span>
-                  <span className="text-sm opacity-70">{formatYen(p.price)}</span>
-                  {(cart[p.id] ?? 0) > 0 && (
-                    <span className="absolute right-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-black px-1 text-xs font-bold text-white dark:bg-white dark:text-black">
-                      {cart[p.id]}
-                    </span>
-                  )}
-                  {p.is_sold_out && (
-                    <span className="absolute inset-x-0 bottom-2 text-xs font-bold text-red-600">
-                      売り切れ
-                    </span>
-                  )}
-                </button>
-              ))}
+              {products.map((p) =>
+                adminMode ? (
+                  // 管理者モード: 価格編集＋売切れ切替
+                  <div
+                    key={p.id}
+                    className="flex flex-col gap-2 rounded-xl border border-amber-400/60 p-3"
+                  >
+                    <span className="font-medium">{p.name}</span>
+                    <label className="flex items-center gap-1 text-sm">
+                      ¥
+                      <input
+                        type="number"
+                        min={0}
+                        defaultValue={p.price}
+                        onBlur={(e) => savePrice(p, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            savePrice(p, e.currentTarget.value);
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        className="w-full rounded border border-black/15 px-2 py-1 text-right tabular-nums dark:border-white/20"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => toggleSoldOut(p)}
+                      className={`rounded px-2 py-1 text-sm font-medium ${
+                        p.is_sold_out
+                          ? "bg-red-600 text-white"
+                          : "border border-black/15 dark:border-white/20"
+                      }`}
+                    >
+                      {p.is_sold_out ? "売り切れ中（復活）" : "売り切れにする"}
+                    </button>
+                  </div>
+                ) : (
+                  // 通常モード: タップで追加
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={p.is_sold_out}
+                    onClick={() => addItem(p)}
+                    className="relative flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border border-black/15 p-3 text-center transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/10"
+                  >
+                    <span className="font-medium">{p.name}</span>
+                    <span className="text-sm opacity-70">{formatYen(p.price)}</span>
+                    {(cart[p.id] ?? 0) > 0 && (
+                      <span className="absolute right-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-black px-1 text-xs font-bold text-white dark:bg-white dark:text-black">
+                        {cart[p.id]}
+                      </span>
+                    )}
+                    {p.is_sold_out && (
+                      <span className="absolute inset-x-0 bottom-2 text-xs font-bold text-red-600">
+                        売り切れ
+                      </span>
+                    )}
+                  </button>
+                ),
+              )}
             </div>
           )}
         </section>
@@ -208,7 +324,7 @@ function CashierInner() {
           <h2 className="font-semibold">注文内容</h2>
           <ul className="flex flex-col gap-2">
             {itemCount === 0 && (
-              <li className="py-4 text-center text-sm opacity-50">
+              <li className="py-3 text-center text-sm opacity-50">
                 商品をタップして追加
               </li>
             )}
@@ -244,39 +360,76 @@ function CashierInner() {
           </ul>
 
           <div className="mt-auto flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/15">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm opacity-70">合計</span>
-              <span className="text-2xl font-bold tabular-nums">{formatYen(total)}</span>
+            <div className="flex items-baseline justify-between text-sm opacity-70">
+              <span>小計</span>
+              <span className="tabular-nums">{formatYen(subtotal)}</span>
             </div>
 
-            {/* お預かり */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm opacity-70">お預かり</label>
+            {/* 割引 */}
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm opacity-70">割引（¥）</label>
               <input
                 type="number"
                 inputMode="numeric"
                 min={0}
-                max={999999}
-                step={1}
-                value={received === 0 ? "" : received}
-                onChange={(e) => setReceived(clampCash(Number(e.target.value)))}
+                value={discount === 0 ? "" : discount}
+                onChange={(e) => setDiscount(clampCash(Number(e.target.value)))}
                 placeholder="0"
-                className="rounded-lg border border-black/15 px-3 py-2 text-right text-lg tabular-nums dark:border-white/20"
+                className="w-28 rounded-lg border border-black/15 px-3 py-1.5 text-right tabular-nums dark:border-white/20"
               />
-              <div className="flex flex-wrap gap-2">
-                {QUICK_CASH.map((amount) => (
+            </div>
+
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm opacity-70">お会計</span>
+              <span className="text-2xl font-bold tabular-nums">{formatYen(payable)}</span>
+            </div>
+
+            {/* お預かり＋テンキー */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm opacity-70">お預かり</span>
+                <span className="text-lg tabular-nums">{formatYen(received)}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {keypad.map((n) => (
                   <button
-                    key={amount}
+                    key={n}
                     type="button"
-                    onClick={() => setReceived((r) => clampCash(r + amount))}
-                    className="flex-1 rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/20"
+                    onClick={() =>
+                      setReceived((r) => clampCash(r * 10 + Number(n)))
+                    }
+                    className="rounded-lg border border-black/15 py-3 text-lg font-medium tabular-nums dark:border-white/20"
                   >
-                    +{formatYen(amount)}
+                    {n}
                   </button>
                 ))}
                 <button
                   type="button"
-                  onClick={() => setReceived(total)}
+                  onClick={() => setReceived((r) => clampCash(r * 100))}
+                  className="rounded-lg border border-black/15 py-3 text-lg font-medium tabular-nums dark:border-white/20"
+                >
+                  00
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceived((r) => clampCash(r * 10))}
+                  className="rounded-lg border border-black/15 py-3 text-lg font-medium tabular-nums dark:border-white/20"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceived((r) => Math.floor(r / 10))}
+                  className="rounded-lg border border-black/15 py-3 text-lg dark:border-white/20"
+                  aria-label="1桁消す"
+                >
+                  ⌫
+                </button>
+              </div>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setReceived(payable)}
                   className="flex-1 rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/20"
                 >
                   ちょうど
@@ -284,7 +437,7 @@ function CashierInner() {
                 <button
                   type="button"
                   onClick={() => setReceived(0)}
-                  className="rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/20"
+                  className="rounded-lg border border-black/15 px-3 py-1.5 text-sm dark:border-white/20"
                 >
                   クリア
                 </button>
@@ -316,11 +469,15 @@ function CashierInner() {
 
             <button
               type="button"
-              disabled={itemCount === 0 || change < 0 || phase === "submitting"}
+              disabled={!canCheckout}
               onClick={handleCheckout}
               className="rounded-xl bg-black px-6 py-4 text-lg font-bold text-white disabled:opacity-40 dark:bg-white dark:text-black"
             >
-              {phase === "submitting" ? "処理中…" : "会計完了"}
+              {phase === "submitting"
+                ? "処理中…"
+                : adminMode
+                  ? "管理者モード中は会計不可"
+                  : "会計完了（Enter）"}
             </button>
           </div>
         </section>

@@ -75,6 +75,7 @@ export type OrderStatus =
   | "注文完了"
   | "会計完了"
   | "準備完了"
+  | "呼び出し中"
   | "受け渡し完了"
   | "キャンセル";
 
@@ -92,6 +93,7 @@ export type Order = {
   number: number;
   source: OrderSource;
   status: OrderStatus;
+  discount: number;
   created_at: string;
   items?: OrderItem[];
 };
@@ -126,6 +128,7 @@ export const orderApi = {
     source: OrderSource;
     items: { product_id: number; quantity: number }[];
     status?: OrderStatus;
+    discount?: number;
   }) => api<Order>("/orders", { method: "POST", body: payload }),
   updateStatus: (id: number, status: OrderStatus) =>
     api<Order>(`/orders/${id}/status`, { method: "PATCH", body: { status } }),
