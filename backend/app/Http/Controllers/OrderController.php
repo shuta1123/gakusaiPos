@@ -127,21 +127,22 @@ class OrderController extends Controller
     }
 
     /**
-     * 番号を割り当てる（消費）。会計1/会計2で共有する XX(1〜50) の連番から、
-     * 受け渡し完了していない使用中番号をスキップして次を返す。
+     * 番号を割り当てる（消費）。会計1/会計2 それぞれ独立の XX(1〜50) 連番から、
+     * その source で受け渡し完了していない使用中番号をスキップして次を返す。
+     * （会計1と会計2で同じ XX が同時に出るのは許容する＝先頭の帯で区別できる。）
      * 必ず DB トランザクション内で呼ぶこと（カウンタ行をロックして直列化する）。
      */
     public function allocateNumber(string $source): int
     {
         $base = Order::SOURCE_RANGES[$source] ?? 0;
 
-        // 共有カウンタ行をロックし、同時発番を直列化する。
-        $counter = Counter::where('key', 'order_seq')->lockForUpdate()->first();
+        // その source のカウンタ行をロックし、同時発番を直列化する。
+        $counter = Counter::where('key', "order_seq:{$source}")->lockForUpdate()->first();
         $current = $counter?->value ?? 0;
 
-        $xx = $this->computeNextXx($current, $this->activeXx());
+        $xx = $this->computeNextXx($current, $this->activeXx($source));
         if ($xx === null) {
-            abort(409, '発番できる番号がありません（1〜50が全て使用中です）');
+            abort(409, "発番できる番号がありません（{$source}の1〜50が全て使用中です）");
         }
 
         if ($counter) {
@@ -153,11 +154,12 @@ class OrderController extends Controller
     }
 
     /**
-     * 現在アクティブ（受け渡し完了以外）な注文が占有している XX の集合。
+     * 指定 source で現在アクティブ（受け渡し完了以外）な注文が占有している XX の集合。
      */
-    private function activeXx(): Collection
+    private function activeXx(string $source): Collection
     {
-        return Order::whereIn('status', Order::ACTIVE_STATUSES)
+        return Order::where('source', $source)
+            ->whereIn('status', Order::ACTIVE_STATUSES)
             ->pluck('number')
             ->map(fn ($n) => $n % 100)
             ->flip();
@@ -188,13 +190,14 @@ class OrderController extends Controller
             'source' => ['required', Rule::in(array_keys(Order::SOURCE_RANGES))],
         ]);
 
-        $current = (int) (Counter::where('key', 'order_seq')->value('value') ?? 0);
-        $xx = $this->computeNextXx($current, $this->activeXx());
+        $source = $validated['source'];
+        $current = (int) (Counter::where('key', "order_seq:{$source}")->value('value') ?? 0);
+        $xx = $this->computeNextXx($current, $this->activeXx($source));
 
         if ($xx === null) {
             return response()->json(['number' => null, 'message' => '空き番号がありません'], 409);
         }
 
-        return response()->json(['number' => Order::SOURCE_RANGES[$validated['source']] + $xx]);
+        return response()->json(['number' => Order::SOURCE_RANGES[$source] + $xx]);
     }
 }
