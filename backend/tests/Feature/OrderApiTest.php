@@ -43,7 +43,7 @@ class OrderApiTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonFragment(['source' => '会計1', 'status' => '注文完了'])
-            ->assertJsonPath('number', 100);
+            ->assertJsonPath('number', 101);
 
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseCount('order_items', 1);
@@ -65,7 +65,7 @@ class OrderApiTest extends TestCase
             'items' => [['product_id' => $product->id, 'quantity' => 1]],
         ])
             ->assertCreated()
-            ->assertJsonFragment(['status' => '会計完了', 'number' => 100]);
+            ->assertJsonFragment(['status' => '会計完了', 'number' => 101]);
     }
 
     public function test_不正なステータスは拒否される(): void
@@ -79,18 +79,63 @@ class OrderApiTest extends TestCase
         ])->assertStatus(422);
     }
 
-    public function test_番号は帯ごとに循環する(): void
+    public function test_XXは会計1会計2で共有の連番になる(): void
     {
-        // 会計1帯: 100 から始まる
-        Order::create(['number' => 100, 'source' => '会計1', 'status' => '注文完了']);
-        $this->assertSame(101, app(\App\Http\Controllers\OrderController::class)->nextNumber('会計1'));
+        $product = Product::first();
+        $create = fn (string $source) => $this->withToken(StaffToken::current())
+            ->postJson('/api/orders', [
+                'source' => $source,
+                'status' => '会計完了',
+                'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            ]);
 
-        // 末尾99の次は00に戻る（会計1なら 100）
-        Order::create(['number' => 199, 'source' => '会計1', 'status' => '注文完了']);
-        $this->assertSame(100, app(\App\Http\Controllers\OrderController::class)->nextNumber('会計1'));
+        // XX(1〜50) はレジをまたいで共有される。会計1=1XX / 会計2=2XX。
+        $create('会計1')->assertJsonPath('number', 101); // XX=1
+        $create('会計2')->assertJsonPath('number', 202); // XX=2（共有で進む）
+        $create('会計1')->assertJsonPath('number', 103); // XX=3
+    }
 
-        // 会計2帯は 200 から
-        $this->assertSame(200, app(\App\Http\Controllers\OrderController::class)->nextNumber('会計2'));
+    public function test_使用中の番号はスキップし受け渡し完了後は再利用する(): void
+    {
+        $product = Product::first();
+        $create = fn (string $source) => $this->withToken(StaffToken::current())
+            ->postJson('/api/orders', [
+                'source' => $source,
+                'status' => '会計完了',
+                'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            ]);
+
+        $create('会計1')->assertJsonPath('number', 101); // XX=1（使用中）
+
+        // カウンタを 0 に戻して次の候補を XX=1 にする → 使用中なのでスキップして 2
+        \App\Models\Counter::where('key', 'order_seq')->update(['value' => 0]);
+        $create('会計1')->assertJsonPath('number', 102); // XX=1 は使用中→XX=2
+
+        // 101 を受け渡し完了にすると XX=1 が解放され、再利用される
+        Order::where('number', 101)->update(['status' => '受け渡し完了']);
+        \App\Models\Counter::where('key', 'order_seq')->update(['value' => 0]);
+        $create('会計2')->assertJsonPath('number', 201); // XX=1 再利用（会計2帯）
+    }
+
+    public function test_1から50が全て使用中なら発番できない(): void
+    {
+        $product = Product::first();
+
+        // XX=1〜50 を使用中(注文完了)で埋める
+        for ($xx = 1; $xx <= 50; $xx++) {
+            Order::create(['number' => 100 + $xx, 'source' => '会計1', 'status' => '注文完了']);
+        }
+
+        $this->withToken(StaffToken::current())
+            ->postJson('/api/orders', [
+                'source' => '会計1',
+                'status' => '会計完了',
+                'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            ])
+            ->assertStatus(409);
+
+        // 満杯時は注文が作成されない（トランザクションがロールバック）
+        $this->assertDatabaseCount('orders', 50);
     }
 
     public function test_売り切れ商品は注文できない(): void

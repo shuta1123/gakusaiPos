@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Events\OrderCancelled;
 use App\Events\OrderCreated;
 use App\Events\OrderStatusUpdated;
+use App\Models\Counter;
 use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -62,7 +64,7 @@ class OrderController extends Controller
 
         $order = DB::transaction(function () use ($validated, $products) {
             $order = Order::create([
-                'number' => $this->nextNumber($validated['source']),
+                'number' => $this->allocateNumber($validated['source']),
                 'source' => $validated['source'],
                 'status' => $validated['status'] ?? '注文完了',
             ]);
@@ -125,26 +127,60 @@ class OrderController extends Controller
     }
 
     /**
-     * 指定 source の次の注文番号を返す。
+     * 番号を割り当てる（消費）。会計1/会計2で共有する XX(1〜50) の連番から、
+     * 受け渡し完了していない使用中番号をスキップして次を返す。
+     * 必ず DB トランザクション内で呼ぶこと（カウンタ行をロックして直列化する）。
      */
-    public function nextNumber(string $source): int
+    public function allocateNumber(string $source): int
     {
         $base = Order::SOURCE_RANGES[$source] ?? 0;
 
-        $last = Order::where('source', $source)
-            ->orderByDesc('id')
-            ->value('number');
+        // 共有カウンタ行をロックし、同時発番を直列化する。
+        $counter = Counter::where('key', 'order_seq')->lockForUpdate()->first();
+        $current = $counter?->value ?? 0;
 
-        if ($last === null) {
-            return $base;
+        $xx = $this->computeNextXx($current, $this->activeXx());
+        if ($xx === null) {
+            abort(409, '発番できる番号がありません（1〜50が全て使用中です）');
         }
 
-        // 末尾2桁を 00〜99 で循環させる。
-        return $base + (($last - $base + 1) % 100 + 100) % 100;
+        if ($counter) {
+            $counter->value = $xx;
+            $counter->save();
+        }
+
+        return $base + $xx;
     }
 
     /**
-     * GET /api/orders/next-number 用のエンドポイント。
+     * 現在アクティブ（受け渡し完了以外）な注文が占有している XX の集合。
+     */
+    private function activeXx(): Collection
+    {
+        return Order::whereIn('status', Order::ACTIVE_STATUSES)
+            ->pluck('number')
+            ->map(fn ($n) => $n % 100)
+            ->flip();
+    }
+
+    /**
+     * $current の次から 1〜50 を循環し、使用中でない最初の XX を返す。全て使用中なら null。
+     */
+    private function computeNextXx(int $current, Collection $activeXx): ?int
+    {
+        $xx = $current;
+        for ($i = 0; $i < Order::XX_MAX; $i++) {
+            $xx = ($xx % Order::XX_MAX) + 1; // 1..50 を循環（50の次は1）
+            if (! $activeXx->has($xx)) {
+                return $xx;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * GET /api/orders/next-number 用のエンドポイント（消費しないプレビュー）。
      */
     public function nextNumberEndpoint(Request $request): JsonResponse
     {
@@ -152,6 +188,13 @@ class OrderController extends Controller
             'source' => ['required', Rule::in(array_keys(Order::SOURCE_RANGES))],
         ]);
 
-        return response()->json(['number' => $this->nextNumber($validated['source'])]);
+        $current = (int) (Counter::where('key', 'order_seq')->value('value') ?? 0);
+        $xx = $this->computeNextXx($current, $this->activeXx());
+
+        if ($xx === null) {
+            return response()->json(['number' => null, 'message' => '空き番号がありません'], 409);
+        }
+
+        return response()->json(['number' => Order::SOURCE_RANGES[$validated['source']] + $xx]);
     }
 }

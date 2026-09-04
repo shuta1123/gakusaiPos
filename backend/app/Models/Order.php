@@ -10,11 +10,18 @@ class Order extends Model
 {
     use HasFactory;
 
-    /** 注文番号の帯（source => 百の位）。末尾2桁は 00〜99 で循環する。 */
+    /** 注文番号の帯（source => 百の位）。末尾2桁 XX は会計1/会計2で共有する。 */
     public const SOURCE_RANGES = [
         '会計1' => 100,
         '会計2' => 200,
     ];
+
+    /** 共有する末尾2桁 XX の範囲（1〜50 を循環）。 */
+    public const XX_MIN = 1;
+    public const XX_MAX = 50;
+
+    /** 番号を占有し続けるステータス（受け渡し完了になれば解放）。 */
+    public const ACTIVE_STATUSES = ['注文完了', '会計完了', '準備完了'];
 
     /** ステータス遷移順。 */
     public const STATUS_FLOW = [
