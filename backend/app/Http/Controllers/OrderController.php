@@ -135,20 +135,24 @@ class OrderController extends Controller
     public function allocateNumber(string $source): int
     {
         $base = Order::SOURCE_RANGES[$source] ?? 0;
+        $key = "order_seq:{$source}";
 
         // その source のカウンタ行をロックし、同時発番を直列化する。
-        $counter = Counter::where('key', "order_seq:{$source}")->lockForUpdate()->first();
-        $current = $counter?->value ?? 0;
+        // 行が無い場合（手動削除等）に備え、作成してからロックし直す。
+        $counter = Counter::where('key', $key)->lockForUpdate()->first();
+        if (! $counter) {
+            Counter::firstOrCreate(['key' => $key], ['value' => 0]);
+            $counter = Counter::where('key', $key)->lockForUpdate()->first();
+        }
+        $current = $counter->value;
 
         $xx = $this->computeNextXx($current, $this->activeXx($source));
         if ($xx === null) {
             abort(409, "発番できる番号がありません（{$source}の1〜50が全て使用中です）");
         }
 
-        if ($counter) {
-            $counter->value = $xx;
-            $counter->save();
-        }
+        $counter->value = $xx;
+        $counter->save();
 
         return $base + $xx;
     }
