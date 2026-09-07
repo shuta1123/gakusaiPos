@@ -34,11 +34,8 @@ function CookingInner() {
     [orders, completedIds],
   );
 
-  // 0の品目行は非表示（表示中の注文で合計0の品目を除く）
-  const visibleProducts = useMemo(
-    () => products.filter((p) => displayedOrders.some((o) => qtyOf(o, p.id) > 0)),
-    [products, displayedOrders],
-  );
+  // 品目行は常に全表示する（0の行も隠さない）。
+  const visibleProducts = products;
 
   const complete = useCallback(
     async (order: Order | undefined) => {
@@ -183,9 +180,11 @@ function CookingInner() {
                       return (
                         <td
                           key={order.id}
-                          className="w-[72px] border border-black/15 p-1 text-left text-[32px] leading-none tabular-nums dark:border-white/20"
+                          className={`w-[72px] border border-black/15 p-1 text-left text-[32px] leading-none tabular-nums dark:border-white/20 ${
+                            q === 0 ? "opacity-30" : ""
+                          }`}
                         >
-                          {q > 0 ? q : ""}
+                          {q}
                         </td>
                       );
                     })}

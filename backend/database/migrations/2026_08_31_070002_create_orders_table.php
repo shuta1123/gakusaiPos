@@ -13,8 +13,10 @@ return new class extends Migration
             // 注文番号（例: 142 = 会計1帯の末尾42）。source帯 + 末尾2桁00〜99。
             $table->unsignedSmallInteger('number');
             $table->enum('source', ['会計1', '会計2']);
-            $table->enum('status', ['注文完了', '会計完了', '準備完了', '受け渡し完了', 'キャンセル'])
+            $table->enum('status', ['注文完了', '会計完了', '準備完了', '呼び出し中', '受け渡し完了', 'キャンセル'])
                 ->default('注文完了');
+            // 会計時に適用した割引額（円）。合計 = Σ(unit_price×quantity) − discount。
+            $table->unsignedInteger('discount')->default(0);
             $table->timestamps();
 
             $table->index('status');
