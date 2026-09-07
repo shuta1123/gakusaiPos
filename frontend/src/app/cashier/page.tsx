@@ -31,6 +31,13 @@ function CashierInner() {
   const [phase, setPhase] = useState<"cart" | "submitting" | "done">("cart");
   const [issuedNumber, setIssuedNumber] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // 会計完了時の金額を固定表示するためのスナップショット（完了画面用）。
+  const [snapshot, setSnapshot] = useState<{
+    subtotal: number;
+    discount: number;
+    received: number;
+    change: number;
+  } | null>(null);
 
   const subtotal = useMemo(
     () => products.reduce((sum, p) => sum + p.price * (cart[p.id] ?? 0), 0),
@@ -47,8 +54,16 @@ function CashierInner() {
   const clampCash = (v: number) =>
     !Number.isFinite(v) || v <= 0 ? 0 : Math.min(MAX_CASH, Math.floor(v));
 
+  // カートに売り切れ商品が含まれていないか（リアルタイムで売切れになった場合に会計を止める）。
+  const hasSoldOutInCart = products.some(
+    (p) => (cart[p.id] ?? 0) > 0 && p.is_sold_out,
+  );
   const canCheckout =
-    itemCount > 0 && change >= 0 && phase !== "submitting" && !adminMode;
+    itemCount > 0 &&
+    change >= 0 &&
+    phase !== "submitting" &&
+    !adminMode &&
+    !hasSoldOutInCart;
 
   const addItem = useCallback((p: Product) => {
     if (p.is_sold_out) return;
@@ -70,6 +85,7 @@ function CashierInner() {
     setReceived(0);
     setDiscount(0);
     setIssuedNumber(null);
+    setSnapshot(null);
     setSubmitError(null);
     setPhase("cart");
   }
@@ -94,6 +110,12 @@ function CashierInner() {
         items,
         status: "会計完了",
         discount: effectiveDiscount,
+      });
+      setSnapshot({
+        subtotal,
+        discount: effectiveDiscount,
+        received,
+        change,
       });
       setIssuedNumber(order.number);
       setPhase("done");
@@ -126,6 +148,8 @@ function CashierInner() {
     adminMode,
     cart,
     register,
+    subtotal,
+    received,
     effectiveDiscount,
     refresh,
   ]);
@@ -184,8 +208,8 @@ function CashierInner() {
     );
   }
 
-  // 会計完了後の番号表示
-  if (phase === "done" && issuedNumber !== null) {
+  // 会計完了後の番号表示（金額は会計時のスナップショットを使う）
+  if (phase === "done" && issuedNumber !== null && snapshot !== null) {
     return (
       <main className="flex h-dvh w-full flex-col gap-4 overflow-hidden p-6">
         <div className="flex flex-1 flex-col items-center justify-center gap-8 lg:flex-row lg:gap-14">
@@ -203,24 +227,24 @@ function CashierInner() {
           <div className="flex w-full max-w-md flex-col gap-3 lg:w-auto">
             <div className="flex items-baseline justify-between gap-8 text-2xl sm:text-3xl">
               <span className="opacity-60">合計</span>
-              <span className="tabular-nums">{formatYen(subtotal)}</span>
+              <span className="tabular-nums">{formatYen(snapshot.subtotal)}</span>
             </div>
-            {effectiveDiscount > 0 && (
+            {snapshot.discount > 0 && (
               <div className="flex items-baseline justify-between gap-8 text-2xl sm:text-3xl">
                 <span className="opacity-60">割引</span>
-                <span className="tabular-nums">−{formatYen(effectiveDiscount)}</span>
+                <span className="tabular-nums">−{formatYen(snapshot.discount)}</span>
               </div>
             )}
             <div className="flex items-baseline justify-between gap-8 text-2xl sm:text-3xl">
               <span className="opacity-60">お預かり</span>
-              <span className="tabular-nums">{formatYen(received)}</span>
+              <span className="tabular-nums">{formatYen(snapshot.received)}</span>
             </div>
             <div className="flex items-baseline justify-between gap-8 border-t border-black/15 pt-3 dark:border-white/20">
               <span className="text-2xl font-semibold opacity-70 sm:text-3xl">
                 お釣り
               </span>
               <span className="text-5xl font-bold tabular-nums sm:text-6xl">
-                {formatYen(change)}
+                {formatYen(snapshot.change)}
               </span>
             </div>
           </div>

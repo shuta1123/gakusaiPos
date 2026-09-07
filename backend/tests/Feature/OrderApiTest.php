@@ -242,6 +242,25 @@ class OrderApiTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_段飛ばしや逆行の遷移は拒否される(): void
+    {
+        $token = StaffToken::current();
+
+        // 段飛ばし: 会計完了 → 受け渡し完了（準備完了/呼び出し中を飛ばす）は不可
+        $skip = Order::create(['number' => 101, 'source' => '会計1', 'status' => '会計完了']);
+        $this->withToken($token)
+            ->patchJson("/api/orders/{$skip->id}/status", ['status' => '受け渡し完了'])
+            ->assertStatus(422);
+        $this->assertSame('会計完了', $skip->fresh()->status);
+
+        // 逆行: 呼び出し中 → 準備完了 は不可
+        $back = Order::create(['number' => 102, 'source' => '会計1', 'status' => '呼び出し中']);
+        $this->withToken($token)
+            ->patchJson("/api/orders/{$back->id}/status", ['status' => '準備完了'])
+            ->assertStatus(422);
+        $this->assertSame('呼び出し中', $back->fresh()->status);
+    }
+
     public function test_受け渡し完了からは戻せない(): void
     {
         $order = Order::create(['number' => 101, 'source' => '会計1', 'status' => '受け渡し完了']);

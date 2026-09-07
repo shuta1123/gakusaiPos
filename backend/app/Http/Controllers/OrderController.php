@@ -111,26 +111,29 @@ class OrderController extends Controller
             'status' => ['required', Rule::in(Order::STATUS_FLOW)],
         ]);
 
-        // 行ロックで「判定→更新」を原子的に行う。終端「受け渡し完了」からの復帰は
-        // 禁止（番号が解放・再利用された後に復帰すると同一番号が二重にアクティブ化するため）。
+        // 行ロックで「判定→更新」を原子的に行う。遷移は前進のみ許可し（STATUS_TRANSITIONS）、
+        // 逆行・段飛ばし・終端(受け渡し完了/キャンセル)からの復帰を禁止する。
+        // 終端からの復帰は、番号が解放・再利用された後だと同一番号が二重にアクティブ化するため特に危険。
         // 並行更新でも stale read でガードを擦り抜けないよう lockForUpdate する。
         $updated = DB::transaction(function () use ($order, $validated) {
             $locked = Order::whereKey($order->getKey())->lockForUpdate()->first();
             if ($locked === null) {
                 return null;
             }
-            if (in_array($locked->status, Order::TERMINAL_STATUSES, true)
-                && $locked->status !== $validated['status']) {
+            $to = $validated['status'];
+            $allowed = Order::STATUS_TRANSITIONS[$locked->status] ?? [];
+            // 同一ステータスへの更新は冪等に許可。それ以外は許可された前進遷移のみ。
+            if ($locked->status !== $to && ! in_array($to, $allowed, true)) {
                 return false;
             }
-            $locked->update(['status' => $validated['status']]);
+            $locked->update(['status' => $to]);
 
             return $locked;
         });
 
         if ($updated === false) {
             return response()->json([
-                'message' => '受け渡し完了・キャンセル済みの注文はステータスを戻せません',
+                'message' => '許可されないステータス遷移です',
             ], 422);
         }
         if ($updated === null) {
