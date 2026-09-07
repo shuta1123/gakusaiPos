@@ -12,6 +12,7 @@ const screens: { href: string; label: string }[] = [
   { href: "/cooking", label: "調理担当" },
   { href: "/kitchen", label: "受け渡し（管理）" },
   { href: "/display", label: "受け渡し（客向け）" },
+  { href: "/stats", label: "集計" },
 ];
 
 export default function SelectPage() {

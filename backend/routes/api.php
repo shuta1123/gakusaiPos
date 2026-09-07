@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\StatsController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -34,4 +35,7 @@ Route::middleware('staff.auth')->group(function () {
     Route::get('/orders/{order}', [OrderController::class, 'show'])->whereNumber('order');
     Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->whereNumber('order');
     Route::delete('/orders/{order}', [OrderController::class, 'destroy'])->whereNumber('order');
+
+    // 集計
+    Route::get('/stats', [StatsController::class, 'summary']);
 });

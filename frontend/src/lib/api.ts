@@ -115,6 +115,18 @@ export const productApi = {
     api<Product>(`/products/${id}`, { method: "PATCH", body: patch }),
 };
 
+export type Stats = {
+  total_sales: number;
+  order_count: number;
+  total_discount: number;
+  by_source: Record<string, { count: number; sales: number }>;
+  by_product: { name: string; units: number; sales: number }[];
+};
+
+export const statsApi = {
+  summary: () => api<Stats>("/stats"),
+};
+
 export const orderApi = {
   list: (params?: { status?: OrderStatus; source?: OrderSource }) => {
     const q = new URLSearchParams();
