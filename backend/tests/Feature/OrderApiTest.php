@@ -261,6 +261,17 @@ class OrderApiTest extends TestCase
         $this->assertSame('呼び出し中', $back->fresh()->status);
     }
 
+    public function test_同一ステータスへの更新は冪等に許可される(): void
+    {
+        // 複数端末が同じ操作をしても壊れないよう、同一ステータスへの更新は許可(no-op)。
+        $order = Order::create(['number' => 101, 'source' => '会計1', 'status' => '呼び出し中']);
+
+        $this->withToken(StaffToken::current())
+            ->patchJson("/api/orders/{$order->id}/status", ['status' => '呼び出し中'])
+            ->assertOk()
+            ->assertJsonFragment(['status' => '呼び出し中']);
+    }
+
     public function test_受け渡し完了からは戻せない(): void
     {
         $order = Order::create(['number' => 101, 'source' => '会計1', 'status' => '受け渡し完了']);
