@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AuthGuard from "@/components/AuthGuard";
 import { useOrders } from "@/hooks/useOrders";
@@ -28,14 +28,40 @@ function DisplayInner() {
   const hasError = Boolean(paid.error || ready.error || calling.error);
   const anyLoading = paid.loading || ready.loading || calling.loading;
 
+  // 全画面表示（客向けモニター用）。この画面だけトグルできる。
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }, []);
+
   return (
     <main className="relative flex flex-1 flex-col gap-6 p-6 lg:flex-row">
-      <Link
-        href="/select"
-        className="absolute right-2 top-2 text-xs underline opacity-30 hover:opacity-70"
-      >
-        画面選択
-      </Link>
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          className="rounded-md border border-black/20 px-2 py-1 text-xs opacity-40 hover:opacity-90 dark:border-white/25"
+        >
+          {isFullscreen ? "⛶ 全画面を解除" : "⛶ 全画面"}
+        </button>
+        {!isFullscreen && (
+          <Link
+            href="/select"
+            className="text-xs underline opacity-30 hover:opacity-70"
+          >
+            画面選択
+          </Link>
+        )}
+      </div>
 
       {hasError && (
         <p
