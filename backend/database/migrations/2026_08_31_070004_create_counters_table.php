@@ -16,15 +16,13 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 会計1/会計2 それぞれ独立の採番シーケンス（末尾2桁 XX の直近位置）。
-        foreach (['会計1', '会計2'] as $source) {
-            DB::table('counters')->insert([
-                'key' => "order_seq:{$source}",
-                'value' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
+        // 会計1/会計2 で共有する採番シーケンス（末尾2桁 XX の直近位置）。
+        DB::table('counters')->insert([
+            'key' => 'order_seq',
+            'value' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     public function down(): void

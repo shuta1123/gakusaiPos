@@ -10,13 +10,13 @@ class Order extends Model
 {
     use HasFactory;
 
-    /** 注文番号の帯（source => 百の位）。末尾2桁 XX は会計1/会計2それぞれ独立。 */
+    /** 注文番号の帯（source => 百の位）。末尾2桁 XX は会計1/会計2で共有する単一連番。 */
     public const SOURCE_RANGES = [
         '会計1' => 100,
         '会計2' => 200,
     ];
 
-    /** 末尾2桁 XX の範囲（各レジ独立で 1〜50 を循環）。 */
+    /** 共有する末尾2桁 XX の範囲（1〜50 を循環）。 */
     public const XX_MIN = 1;
     public const XX_MAX = 50;
 
