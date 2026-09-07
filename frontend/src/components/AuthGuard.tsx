@@ -1,45 +1,49 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getToken, onAuthChange } from "@/lib/auth";
 
-function subscribe(callback: () => void) {
-  // 他タブ変更（storage）と同一タブ変更（onAuthChange）の両方を購読する。
-  window.addEventListener("storage", callback);
-  const off = onAuthChange(callback);
-  return () => {
-    window.removeEventListener("storage", callback);
-    off();
-  };
-}
+type Status = "checking" | "in" | "out";
 
 /**
  * スタッフ用画面をラップし、未ログインなら /login へリダイレクトする。
- * ログイン状態は localStorage を外部ストアとして購読する（SSR時は未ログイン扱い）。
+ * 判定はマウント後の effect で毎回 getToken() を実クライアントで読む（SSR/ハイドレーション
+ * のスナップショットに依存しない）。同一タブ(onAuthChange)・他タブ(storage)の変更も購読。
  */
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const loggedIn = useSyncExternalStore(
-    subscribe,
-    () => getToken() !== null,
-    () => false,
-  );
+  const [status, setStatus] = useState<Status>("checking");
 
-  // リダイレクト判定は effect 実行時（クライアント）に実トークンを読む。
-  // フルページロード時、SSRスナップショット(false)でこの effect が先に走っても
-  // localStorage に実トークンがあれば誤って /login へ飛ばさないため。
   useEffect(() => {
-    if (getToken() === null) router.replace("/login");
-  }, [loggedIn, router]);
+    const check = () => {
+      if (getToken() !== null) {
+        setStatus("in");
+      } else {
+        setStatus("out");
+        router.replace("/login");
+      }
+    };
+    check();
+    const off = onAuthChange(check);
+    window.addEventListener("storage", check);
+    return () => {
+      off();
+      window.removeEventListener("storage", check);
+    };
+  }, [router]);
 
-  if (!loggedIn) {
-    return (
-      <main className="flex flex-1 items-center justify-center p-8">
-        <p className="text-sm opacity-60">読み込み中…</p>
-      </main>
-    );
+  if (status === "in") {
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  // out（/login へ遷移中）は何も描画しない。checking は読み込み表示。
+  if (status === "out") {
+    return null;
+  }
+  return (
+    <main className="flex flex-1 items-center justify-center p-8">
+      <p className="text-sm opacity-60">読み込み中…</p>
+    </main>
+  );
 }

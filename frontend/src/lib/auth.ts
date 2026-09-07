@@ -3,6 +3,10 @@
 
 const TOKEN_KEY = "gakusai_pos_token";
 
+// localStorage が使えない環境（シークレットモード等）でも同一セッション中は
+// ログインを維持できるよう、メモリ上にもトークンを保持する。
+let memoryToken: string | null = null;
+
 // 同一タブ内のトークン変更を購読するためのリスナー群。
 // localStorage の "storage" イベントは他タブ変更しか発火しないため、
 // 同一タブでの setToken/clearToken を通知する仕組みを別途用意する。
@@ -23,22 +27,27 @@ export function onAuthChange(callback: () => void): () => void {
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(TOKEN_KEY);
+    const stored = window.localStorage.getItem(TOKEN_KEY);
+    if (stored !== null) return stored;
   } catch {
-    return null;
+    /* localStorage 不可 → メモリのトークンにフォールバック */
   }
+  return memoryToken;
 }
 
 export function setToken(token: string): void {
+  // localStorage が使えなくてもメモリで維持する。
+  memoryToken = token;
   try {
     window.localStorage.setItem(TOKEN_KEY, token);
   } catch {
-    /* localStorage 不可の環境では何もしない */
+    /* localStorage 不可の環境ではメモリのみで継続 */
   }
   notify();
 }
 
 export function clearToken(): void {
+  memoryToken = null;
   try {
     window.localStorage.removeItem(TOKEN_KEY);
   } catch {
