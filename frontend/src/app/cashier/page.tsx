@@ -330,8 +330,10 @@ function CashierInner() {
                       onClick={() => addItem(p)}
                       className="relative flex aspect-[4/3] flex-col items-center justify-center gap-1 rounded-xl border border-black/15 p-2 text-center transition active:scale-95 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/10"
                     >
-                      <span className="text-base font-semibold">{p.name}</span>
-                      <span className="text-sm opacity-70">
+                      <span className="text-2xl font-bold leading-tight">
+                        {p.name}
+                      </span>
+                      <span className="text-xl opacity-80">
                         {formatYen(p.price)}
                       </span>
                       {(cart[p.id] ?? 0) > 0 && (
