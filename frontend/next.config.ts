@@ -4,6 +4,8 @@ import path from "node:path";
 const nextConfig: NextConfig = {
   // 本番は standalone 出力（.next/standalone/server.js）で軽量に起動する。
   output: "standalone",
+  // 開発時の左下インジケータ（N）を非表示にする。本番では元々表示されない。
+  devIndicators: false,
   // モノレポ配下で親ディレクトリのロックファイルを誤検出しないよう明示。
   turbopack: {
     root: path.join(__dirname),
