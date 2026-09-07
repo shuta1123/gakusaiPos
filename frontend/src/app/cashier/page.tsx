@@ -187,27 +187,49 @@ function CashierInner() {
   // 会計完了後の番号表示
   if (phase === "done" && issuedNumber !== null) {
     return (
-      <main className="flex h-dvh w-full flex-col items-center justify-center gap-4 overflow-hidden p-4 text-center">
-        <p className="text-2xl font-semibold opacity-70 sm:text-3xl">お渡し番号</p>
-        <p className="font-bold leading-none tabular-nums text-[clamp(9rem,42vw,30rem)]">
-          {issuedNumber}
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-base opacity-70 sm:text-lg">
-          <span className="tabular-nums">合計 {formatYen(subtotal)}</span>
-          {effectiveDiscount > 0 && (
-            <span className="tabular-nums">
-              割引 −{formatYen(effectiveDiscount)}
-            </span>
-          )}
-          <span className="tabular-nums">お預かり {formatYen(received)}</span>
-          <span className="font-bold text-black tabular-nums dark:text-white">
-            お釣り {formatYen(change)}
-          </span>
+      <main className="flex h-dvh w-full flex-col gap-4 overflow-hidden p-6">
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 lg:flex-row lg:gap-14">
+          {/* お渡し番号 */}
+          <div className="text-center">
+            <p className="text-2xl font-semibold opacity-70 sm:text-3xl">
+              お渡し番号
+            </p>
+            <p className="font-bold leading-none tabular-nums text-[clamp(8rem,34vw,26rem)]">
+              {issuedNumber}
+            </p>
+          </div>
+
+          {/* 合計・お預かり・お釣り（右側・大きめ） */}
+          <div className="flex w-full max-w-md flex-col gap-3 lg:w-auto">
+            <div className="flex items-baseline justify-between gap-8 text-2xl sm:text-3xl">
+              <span className="opacity-60">合計</span>
+              <span className="tabular-nums">{formatYen(subtotal)}</span>
+            </div>
+            {effectiveDiscount > 0 && (
+              <div className="flex items-baseline justify-between gap-8 text-2xl sm:text-3xl">
+                <span className="opacity-60">割引</span>
+                <span className="tabular-nums">−{formatYen(effectiveDiscount)}</span>
+              </div>
+            )}
+            <div className="flex items-baseline justify-between gap-8 text-2xl sm:text-3xl">
+              <span className="opacity-60">お預かり</span>
+              <span className="tabular-nums">{formatYen(received)}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-8 border-t border-black/15 pt-3 dark:border-white/20">
+              <span className="text-2xl font-semibold opacity-70 sm:text-3xl">
+                お釣り
+              </span>
+              <span className="text-5xl font-bold tabular-nums sm:text-6xl">
+                {formatYen(change)}
+              </span>
+            </div>
+          </div>
         </div>
+
         <button
           type="button"
           onClick={resetSale}
-          className="mt-2 w-full max-w-md rounded-2xl bg-black px-6 py-6 text-2xl font-bold text-white dark:bg-white dark:text-black"
+          className="w-full rounded-2xl bg-black py-6 text-2xl font-bold text-white dark:bg-white dark:text-black"
         >
           次の会計へ
         </button>
