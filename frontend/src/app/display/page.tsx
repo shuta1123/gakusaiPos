@@ -65,7 +65,7 @@ function DisplayInner() {
             {callingOrders.map((o) => (
               <span
                 key={o.id}
-                className="min-w-[120px] animate-pulse rounded-xl bg-green-600 px-4 py-3 text-center text-[64px] font-bold leading-none tabular-nums text-white"
+                className="min-w-[120px] rounded-xl bg-green-600 px-4 py-3 text-center text-[64px] font-bold leading-none tabular-nums text-white"
               >
                 {o.number}
               </span>
