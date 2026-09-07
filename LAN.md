@@ -41,9 +41,15 @@ docker compose logs -f       # ログ確認
 
 ## 補足・制限
 - 現状は開発サーバー（`next dev` / `php artisan serve`）で動作します。
-  数台〜十数台規模のLANなら実用上問題ありません。ブラウザのコンソールに
-  Next.jsのHMR用WebSocket接続エラーが出ることがありますが、**機能には影響しません**
-  （アプリのリアルタイム更新はReverb:8080で別途動作）。
+  数台〜十数台規模のLANなら実用上問題ありません。
+- Next.js 16 の開発サーバーは localhost 以外のオリジンからの内部リクエストを
+  既定で 403 ブロックするため、`lan-up.sh` が `LAN_DEV_ORIGIN=<IP>` を渡し
+  `next.config.ts` の `allowedDevOrigins` に追加して回避しています。
+  （**手動で `docker compose up` する場合は `.env` に `LAN_DEV_ORIGIN=<IP>` が必要**）。
+- ブラウザのコンソールに Next.js のHMR用WebSocket接続エラーが出ることがありますが、
+  **機能には影響しません**（アプリのリアルタイム更新はReverb:8080で別途動作）。
+- localStorage が使えない環境（シークレットモード等）でも、トークンをメモリに保持して
+  同一セッション中はログインを維持します。
 - より高負荷・高信頼にしたい場合は、フロントを standalone 本番ビルド化・
   backendを Octane/FPM 化する余地あり（今後の課題）。
 - タブレットは自動スリープ・自動ロックを切っておくと安定します。

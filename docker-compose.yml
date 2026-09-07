@@ -131,6 +131,8 @@ services:
       NEXT_PUBLIC_REVERB_HOST: ${NEXT_PUBLIC_REVERB_HOST:-localhost}
       NEXT_PUBLIC_REVERB_PORT: ${NEXT_PUBLIC_REVERB_PORT:-8080}
       NEXT_PUBLIC_REVERB_SCHEME: ${NEXT_PUBLIC_REVERB_SCHEME:-http}
+      # LAN共有モードで別端末(LAN IP)からのアクセスを許可する（scripts/lan-up.sh が設定）。
+      LAN_DEV_ORIGIN: ${LAN_DEV_ORIGIN:-}
     ports:
       - "3001:3001"
     volumes:

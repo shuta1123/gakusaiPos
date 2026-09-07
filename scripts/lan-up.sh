@@ -40,6 +40,8 @@ NEXT_PUBLIC_REVERB_HOST=$IP
 NEXT_PUBLIC_REVERB_PORT=8080
 NEXT_PUBLIC_REVERB_SCHEME=http
 CORS_ALLOWED_ORIGINS=http://$IP:3001
+# Next.js 開発サーバーが LAN IP からのアクセスを許可するため（403回避）
+LAN_DEV_ORIGIN=$IP
 EOF
 
 # --- 起動（env 反映のため再作成込み）---
