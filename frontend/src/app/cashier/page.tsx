@@ -187,39 +187,27 @@ function CashierInner() {
   // 会計完了後の番号表示
   if (phase === "done" && issuedNumber !== null) {
     return (
-      <main className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-8 p-8 text-center">
-        <div>
-          <p className="text-sm opacity-70">お渡し番号</p>
-          <p className="text-[120px] font-bold leading-none tabular-nums">
-            {issuedNumber}
-          </p>
-        </div>
-        <div className="w-full max-w-xs space-y-1 text-sm">
-          <div className="flex justify-between opacity-70">
-            <span>合計</span>
-            <span className="tabular-nums">{formatYen(subtotal)}</span>
-          </div>
+      <main className="flex h-dvh w-full flex-col items-center justify-center gap-4 overflow-hidden p-4 text-center">
+        <p className="text-2xl font-semibold opacity-70 sm:text-3xl">お渡し番号</p>
+        <p className="font-bold leading-none tabular-nums text-[clamp(9rem,42vw,30rem)]">
+          {issuedNumber}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-base opacity-70 sm:text-lg">
+          <span className="tabular-nums">合計 {formatYen(subtotal)}</span>
           {effectiveDiscount > 0 && (
-            <div className="flex justify-between opacity-70">
-              <span>割引</span>
-              <span className="tabular-nums">
-                −{formatYen(effectiveDiscount)}
-              </span>
-            </div>
+            <span className="tabular-nums">
+              割引 −{formatYen(effectiveDiscount)}
+            </span>
           )}
-          <div className="flex justify-between opacity-70">
-            <span>お預かり</span>
-            <span className="tabular-nums">{formatYen(received)}</span>
-          </div>
-          <div className="flex justify-between border-t border-black/10 pt-1 text-lg font-bold dark:border-white/15">
-            <span>お釣り</span>
-            <span className="tabular-nums">{formatYen(change)}</span>
-          </div>
+          <span className="tabular-nums">お預かり {formatYen(received)}</span>
+          <span className="font-bold text-black tabular-nums dark:text-white">
+            お釣り {formatYen(change)}
+          </span>
         </div>
         <button
           type="button"
           onClick={resetSale}
-          className="w-full rounded-2xl bg-black px-6 py-5 text-xl font-bold text-white dark:bg-white dark:text-black"
+          className="mt-2 w-full max-w-md rounded-2xl bg-black px-6 py-6 text-2xl font-bold text-white dark:bg-white dark:text-black"
         >
           次の会計へ
         </button>
@@ -427,6 +415,31 @@ function CashierInner() {
             <span className="text-2xl tabular-nums">{formatYen(received)}</span>
           </div>
 
+          {/* お釣り（テンキーの上に表示） */}
+          <div
+            className={`flex items-baseline justify-between rounded-xl px-3 py-2 ${
+              received > 0 && change < 0
+                ? "bg-red-50 dark:bg-red-950/40"
+                : "bg-green-50 dark:bg-green-950/20"
+            }`}
+          >
+            <span className="text-sm font-medium opacity-70">お釣り</span>
+            <span
+              className={`text-3xl font-bold tabular-nums ${
+                received > 0 && change < 0
+                  ? "text-red-600"
+                  : "text-green-700 dark:text-green-400"
+              }`}
+            >
+              {received > 0 ? formatYen(Math.max(0, change)) : "—"}
+            </span>
+          </div>
+          {received > 0 && change < 0 && (
+            <p className="text-right text-xs text-red-600">
+              {formatYen(-change)} 不足しています
+            </p>
+          )}
+
           {/* テンキー */}
           <div className="grid grid-cols-3 gap-1.5">
             {keypad.map((n) => (
@@ -478,31 +491,6 @@ function CashierInner() {
               クリア
             </button>
           </div>
-
-          {/* お釣り */}
-          <div
-            className={`flex items-baseline justify-between rounded-xl px-3 py-2 ${
-              received > 0 && change < 0
-                ? "bg-red-50 dark:bg-red-950/40"
-                : "bg-green-50 dark:bg-green-950/20"
-            }`}
-          >
-            <span className="text-sm font-medium opacity-70">お釣り</span>
-            <span
-              className={`text-3xl font-bold tabular-nums ${
-                received > 0 && change < 0
-                  ? "text-red-600"
-                  : "text-green-700 dark:text-green-400"
-              }`}
-            >
-              {received > 0 ? formatYen(Math.max(0, change)) : "—"}
-            </span>
-          </div>
-          {received > 0 && change < 0 && (
-            <p className="text-right text-xs text-red-600">
-              {formatYen(-change)} 不足しています
-            </p>
-          )}
 
           {submitError && (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40">
