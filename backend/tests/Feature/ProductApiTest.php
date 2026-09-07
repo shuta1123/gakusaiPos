@@ -27,8 +27,9 @@ class ProductApiTest extends TestCase
         $this->withToken(StaffToken::current())
             ->getJson('/api/products')
             ->assertOk()
-            ->assertJsonCount(4)
-            ->assertJsonFragment(['name' => '焼きそば', 'price' => 300]);
+            ->assertJsonCount(5)
+            ->assertJsonFragment(['name' => '焼きそば', 'price' => 300])
+            ->assertJsonFragment(['name' => 'わらび餅', 'price' => 400]);
     }
 
     public function test_未認証では売り切れ設定できない(): void

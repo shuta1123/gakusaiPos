@@ -45,6 +45,7 @@ class OrderController extends Controller
             // 会計画面のように「作成＝会計完了」を1リクエストで原子的に行うため、
             // 初期ステータスを任意指定できる（未指定は 注文完了）。
             'status' => ['sometimes', Rule::in(Order::STATUS_FLOW)],
+            'discount' => ['sometimes', 'integer', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
@@ -62,11 +63,17 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($validated, $products) {
+        // 割引は小計を超えないように丸める（合計がマイナスにならないように）。
+        $subtotal = collect($validated['items'])
+            ->sum(fn ($item) => $products[$item['product_id']]->price * $item['quantity']);
+        $discount = min((int) ($validated['discount'] ?? 0), $subtotal);
+
+        $order = DB::transaction(function () use ($validated, $products, $discount) {
             $order = Order::create([
                 'number' => $this->allocateNumber($validated['source']),
                 'source' => $validated['source'],
                 'status' => $validated['status'] ?? '注文完了',
+                'discount' => $discount,
             ]);
 
             foreach ($validated['items'] as $item) {
@@ -170,17 +177,17 @@ class OrderController extends Controller
     }
 
     /**
-     * 番号を割り当てる（消費）。会計1/会計2 それぞれ独立の XX(1〜50) 連番から、
-     * その source で受け渡し完了していない使用中番号をスキップして次を返す。
-     * （会計1と会計2で同じ XX が同時に出るのは許容する＝先頭の帯で区別できる。）
+     * 番号を割り当てる（消費）。末尾2桁 XX(1〜50) は会計1/会計2で共有する単一連番。
+     * 例: 102 → 203 → 204 → 105（XXが02,03,04,05と共有で進み、先頭は発番したレジ）。
+     * 受け渡し完了していない使用中の XX はスキップする。
      * 必ず DB トランザクション内で呼ぶこと（カウンタ行をロックして直列化する）。
      */
     public function allocateNumber(string $source): int
     {
         $base = Order::SOURCE_RANGES[$source] ?? 0;
-        $key = "order_seq:{$source}";
+        $key = 'order_seq';
 
-        // その source のカウンタ行をロックし、同時発番を直列化する。
+        // 共有カウンタ行をロックし、同時発番を直列化する。
         // 行が無い場合（手動削除等）に備え、作成してからロックし直す。
         $counter = Counter::where('key', $key)->lockForUpdate()->first();
         if (! $counter) {
@@ -189,9 +196,9 @@ class OrderController extends Controller
         }
         $current = $counter->value;
 
-        $xx = $this->computeNextXx($current, $this->activeXx($source));
+        $xx = $this->computeNextXx($current, $this->activeXx());
         if ($xx === null) {
-            abort(409, "発番できる番号がありません（{$source}の1〜50が全て使用中です）");
+            abort(409, '発番できる番号がありません（1〜50が全て使用中です）');
         }
 
         $counter->value = $xx;
@@ -201,12 +208,11 @@ class OrderController extends Controller
     }
 
     /**
-     * 指定 source で現在アクティブ（受け渡し完了以外）な注文が占有している XX の集合。
+     * 現在アクティブ（受け渡し完了以外）な注文が占有している XX の集合（全レジ共通）。
      */
-    private function activeXx(string $source): Collection
+    private function activeXx(): Collection
     {
-        return Order::where('source', $source)
-            ->whereIn('status', Order::ACTIVE_STATUSES)
+        return Order::whereIn('status', Order::ACTIVE_STATUSES)
             ->pluck('number')
             ->map(fn ($n) => $n % 100)
             ->flip();
@@ -238,8 +244,8 @@ class OrderController extends Controller
         ]);
 
         $source = $validated['source'];
-        $current = (int) (Counter::where('key', "order_seq:{$source}")->value('value') ?? 0);
-        $xx = $this->computeNextXx($current, $this->activeXx($source));
+        $current = (int) (Counter::where('key', 'order_seq')->value('value') ?? 0);
+        $xx = $this->computeNextXx($current, $this->activeXx());
 
         if ($xx === null) {
             return response()->json(['number' => null, 'message' => '空き番号がありません'], 409);
