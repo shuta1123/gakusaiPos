@@ -20,6 +20,9 @@ class Order extends Model
     public const XX_MIN = 1;
     public const XX_MAX = 50;
 
+    /** 発番しない番号（フル3桁）。例: 108 を避ける。追加したい番号はここに足す。 */
+    public const EXCLUDED_NUMBERS = [108];
+
     /** 番号を占有し続けるステータス（受け渡し完了になれば解放）。 */
     public const ACTIVE_STATUSES = ['注文完了', '会計完了', '準備完了', '呼び出し中'];
 

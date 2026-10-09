@@ -199,7 +199,7 @@ class OrderController extends Controller
         }
         $current = $counter->value;
 
-        $xx = $this->computeNextXx($current, $this->activeXx());
+        $xx = $this->computeNextXx($current, $this->blockedXx($source));
         if ($xx === null) {
             abort(409, '発番できる番号がありません（1〜50が全て使用中です）');
         }
@@ -219,6 +219,24 @@ class OrderController extends Controller
             ->pluck('number')
             ->map(fn ($n) => $n % 100)
             ->flip();
+    }
+
+    /**
+     * 指定 source で発番を避けるべき XX の集合（アクティブ＋除外番号）。
+     * 除外番号(フル3桁)はその source の帯に入るものだけ XX に変換してブロックする。
+     */
+    private function blockedXx(string $source): Collection
+    {
+        $base = Order::SOURCE_RANGES[$source] ?? 0;
+        $blocked = $this->activeXx();
+        foreach (Order::EXCLUDED_NUMBERS as $number) {
+            $xx = $number - $base;
+            if ($xx >= Order::XX_MIN && $xx <= Order::XX_MAX) {
+                $blocked->put($xx, true);
+            }
+        }
+
+        return $blocked;
     }
 
     /**
@@ -248,7 +266,7 @@ class OrderController extends Controller
 
         $source = $validated['source'];
         $current = (int) (Counter::where('key', 'order_seq')->value('value') ?? 0);
-        $xx = $this->computeNextXx($current, $this->activeXx());
+        $xx = $this->computeNextXx($current, $this->blockedXx($source));
 
         if ($xx === null) {
             return response()->json(['number' => null, 'message' => '空き番号がありません'], 409);

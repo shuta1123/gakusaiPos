@@ -140,6 +140,24 @@ class OrderApiTest extends TestCase
         $this->assertDatabaseCount('orders', 50); // ロールバックで増えない
     }
 
+    public function test_除外番号108は発番されない(): void
+    {
+        $create = fn (string $source) => $this->withToken(StaffToken::current())
+            ->postJson('/api/orders', [
+                'source' => $source,
+                'status' => '会計完了',
+                'items' => [['product_id' => Product::first()->id, 'quantity' => 1]],
+            ])->json('number');
+
+        // カウンタを7にして次候補を XX=8 にする → 会計1 は 108 を避けて 109
+        \App\Models\Counter::where('key', 'order_seq')->update(['value' => 7]);
+        $this->assertSame(109, $create('会計1'));
+
+        // 会計2 は 208（除外対象外）を発番できる
+        \App\Models\Counter::where('key', 'order_seq')->update(['value' => 7]);
+        $this->assertSame(208, $create('会計2'));
+    }
+
     public function test_割引を指定して注文できる(): void
     {
         $product = Product::first(); // 焼きそば 600
