@@ -31,7 +31,7 @@ class StatsApiTest extends TestCase
     public function test_売上集計を返す(): void
     {
         [$yakisoba, $warabi] = [
-            Product::where('name', '焼きそば')->first(),   // 300
+            Product::where('name', '焼きそば')->first(),   // 600
             Product::where('name', 'わらび餅')->first(),   // 400
         ];
 
@@ -43,7 +43,7 @@ class StatsApiTest extends TestCase
                 'items' => $items,
             ])->json();
 
-        // 会計1: 焼きそば×2 = 600
+        // 会計1: 焼きそば×2 = 1200
         $create('会計1', [['product_id' => $yakisoba->id, 'quantity' => 2]]);
         // 会計2: わらび餅×1 = 400、割引100 → net 300
         $order2 = $create('会計2', [['product_id' => $warabi->id, 'quantity' => 1]], 100);
@@ -53,19 +53,19 @@ class StatsApiTest extends TestCase
 
         $res = $this->withToken($this->token())->getJson('/api/stats')->assertOk();
 
-        // total_sales = 600 + (400-100) = 900（キャンセル除外）
-        $res->assertJsonPath('total_sales', 900)
+        // total_sales = 1200 + (400-100) = 1500（キャンセル除外）
+        $res->assertJsonPath('total_sales', 1500)
             ->assertJsonPath('order_count', 2)
             ->assertJsonPath('total_discount', 100)
             ->assertJsonPath('by_source.会計1.count', 1)
-            ->assertJsonPath('by_source.会計1.sales', 600)
+            ->assertJsonPath('by_source.会計1.sales', 1200)
             ->assertJsonPath('by_source.会計2.count', 1)
             ->assertJsonPath('by_source.会計2.sales', 300);
 
-        // by_product: 焼きそば 2個/600、わらび餅 1個/400（販売数順）
+        // by_product: 焼きそば 2個/1200、わらび餅 1個/400（販売数順）
         $byProduct = collect($res->json('by_product'))->keyBy('name');
         $this->assertSame(2, $byProduct['焼きそば']['units']);
-        $this->assertSame(600, $byProduct['焼きそば']['sales']);
+        $this->assertSame(1200, $byProduct['焼きそば']['sales']);
         $this->assertSame(1, $byProduct['わらび餅']['units']);
         $this->assertSame(400, $byProduct['わらび餅']['sales']);
     }

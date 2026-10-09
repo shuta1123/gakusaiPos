@@ -10,10 +10,10 @@ class ProductSeeder extends Seeder
     public function run(): void
     {
         $products = [
-            ['name' => '焼きそば', 'price' => 300],
-            ['name' => '焼きそばパン', 'price' => 350],
-            ['name' => 'フランクフルト', 'price' => 200],
-            ['name' => 'ホットドッグ', 'price' => 250],
+            ['name' => '焼きそば', 'price' => 600],
+            ['name' => '焼きそばパン', 'price' => 500],
+            ['name' => 'フランクフルト', 'price' => 400],
+            ['name' => 'ホットドッグ', 'price' => 500],
             ['name' => 'わらび餅', 'price' => 400],
         ];
 

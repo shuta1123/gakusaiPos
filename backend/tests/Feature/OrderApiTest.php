@@ -142,7 +142,7 @@ class OrderApiTest extends TestCase
 
     public function test_割引を指定して注文できる(): void
     {
-        $product = Product::first(); // 焼きそば 300
+        $product = Product::first(); // 焼きそば 600
 
         $this->withToken(StaffToken::current())->postJson('/api/orders', [
             'source' => '会計1',
@@ -156,9 +156,9 @@ class OrderApiTest extends TestCase
 
     public function test_割引は小計を超えない(): void
     {
-        $product = Product::first(); // 300
+        $product = Product::first(); // 焼きそば 600
 
-        // 小計300に対し割引1000を指定 → 300に丸められる
+        // 小計600に対し割引1000を指定 → 600に丸められる
         $this->withToken(StaffToken::current())->postJson('/api/orders', [
             'source' => '会計1',
             'status' => '会計完了',
@@ -166,7 +166,7 @@ class OrderApiTest extends TestCase
             'items' => [['product_id' => $product->id, 'quantity' => 1]],
         ])
             ->assertCreated()
-            ->assertJsonFragment(['discount' => 300]);
+            ->assertJsonFragment(['discount' => 600]);
     }
 
     public function test_呼び出し中を経由して受け渡し完了にできる(): void
