@@ -10,13 +10,13 @@ class Order extends Model
 {
     use HasFactory;
 
-    /** 注文番号の帯（source => 百の位）。末尾2桁 XX は会計1/会計2で共有する単一連番。 */
+    /** 注文番号の帯（source => 百の位）。末尾2桁 XX は会計1/会計2それぞれ独立の連番。 */
     public const SOURCE_RANGES = [
         '会計1' => 100,
         '会計2' => 200,
     ];
 
-    /** 共有する末尾2桁 XX の範囲（1〜50 を循環）。 */
+    /** 末尾2桁 XX の範囲（各レジ独立で 1〜50 を循環）。 */
     public const XX_MIN = 1;
     public const XX_MAX = 50;
 
@@ -48,7 +48,8 @@ class Order extends Model
      */
     public const STATUS_TRANSITIONS = [
         '注文完了' => ['会計完了'],
-        '会計完了' => ['準備完了'],
+        // 会計完了からは、調理の「調理済み(準備完了)」か、受け渡しの「呼び出す(呼び出し中)」のどちらへも進める。
+        '会計完了' => ['準備完了', '呼び出し中'],
         '準備完了' => ['呼び出し中'],
         '呼び出し中' => ['受け渡し完了'],
     ];

@@ -15,32 +15,42 @@ function qtyOf(order: Order, productId: number): number {
 }
 
 function CookingInner() {
-  // 会計完了（＝調理待ち）の注文を古い順に。完了で 準備完了 に進める。
-  const { orders, loading, error, refresh } = useOrders({ status: "会計完了" });
+  // 会計完了（調理中）＋準備完了（調理済）を表示。呼び出し中になると自動で消える。
+  const paid = useOrders({ status: "会計完了" });
+  const ready = useOrders({ status: "準備完了" });
   const { products } = useProducts();
+  const paidRefresh = paid.refresh;
+  const readyRefresh = ready.refresh;
+
   const [completing, setCompleting] = useState<Set<number>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // 完了処理中の注文IDを同期的に管理（連打/長押しでの二重送信を確実に防ぐ）。
+  // 二重送信防止（同期チェック用 ref ＋ 再描画用 state）。
   const inFlightRef = useRef<Set<number>>(new Set());
-  // 完了済みでサーバー反映待ちの注文IDを楽観的に一覧から隠す（再送信窓を塞ぐ）。
-  // ref は同期チェック用、state は再描画用。
-  const completedRef = useRef<Set<number>>(new Set());
+  const completedRef = useRef<Set<number>>(new Set()); // 調理済にした（反映待ち含む）
   const [completedIds, setCompletedIds] = useState<Set<number>>(new Set());
 
-  // 完了済み（反映待ち）を除いた表示対象。
-  const displayedOrders = useMemo(
-    () => orders.filter((o) => !completedIds.has(o.id)),
-    [orders, completedIds],
+  // 会計完了＋準備完了を番号順に統合。
+  const displayedOrders = useMemo(() => {
+    const map = new Map<number, Order>();
+    [...paid.orders, ...ready.orders].forEach((o) => map.set(o.id, o));
+    return [...map.values()].sort((a, b) => a.id - b.id);
+  }, [paid.orders, ready.orders]);
+
+  const isCooked = useCallback(
+    (o: Order) => o.status === "準備完了" || completedIds.has(o.id),
+    [completedIds],
   );
 
   // 品目行は常に全表示する（0の行も隠さない）。
   const visibleProducts = products;
 
+  // 調理済にする（会計完了 → 準備完了）。調理済の注文には何もしない。
   const complete = useCallback(
     async (order: Order | undefined) => {
       if (
         !order ||
+        order.status === "準備完了" ||
         inFlightRef.current.has(order.id) ||
         completedRef.current.has(order.id)
       )
@@ -50,13 +60,13 @@ function CookingInner() {
       try {
         setActionError(null);
         await orderApi.updateStatus(order.id, "準備完了");
-        // 成功したら即座に一覧から隠し（楽観的除外）、反映前の再送信を確実に防ぐ。
         completedRef.current.add(order.id);
         setCompletedIds(new Set(completedRef.current));
-        refresh();
+        paidRefresh();
+        readyRefresh();
       } catch (err) {
         setActionError(
-          `注文${order.number}の完了に失敗しました: ${
+          `注文${order.number}の処理に失敗しました: ${
             err instanceof Error ? err.message : "不明なエラー"
           }`,
         );
@@ -65,28 +75,26 @@ function CookingInner() {
         setCompleting(new Set(inFlightRef.current));
       }
     },
-    [refresh],
+    [paidRefresh, readyRefresh],
   );
 
-  // スペースキーで先頭（最古）の注文を完了。
-  // フォーカスが操作要素にある場合はネイティブ動作（ボタン活性化）に任せる。
-  const ordersRef = useRef(displayedOrders);
+  // 調理中（未調理）の先頭。スペースキーの対象。
+  const firstUncooked = useMemo(
+    () => displayedOrders.find((o) => !isCooked(o)),
+    [displayedOrders, isCooked],
+  );
+
+  const firstRef = useRef(firstUncooked);
   useEffect(() => {
-    ordersRef.current = displayedOrders;
-  }, [displayedOrders]);
+    firstRef.current = firstUncooked;
+  }, [firstUncooked]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space" && e.key !== " ") return;
       const active = document.activeElement;
       if (active && active !== document.body) return;
       e.preventDefault();
-      const first = ordersRef.current[0];
-      if (
-        first &&
-        !inFlightRef.current.has(first.id) &&
-        !completedRef.current.has(first.id)
-      )
-        complete(first);
+      complete(firstRef.current);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -100,13 +108,16 @@ function CookingInner() {
     return result;
   }, [displayedOrders]);
 
+  const error = paid.error || ready.error;
+  const loading = paid.loading || ready.loading;
+
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">
           調理担当{" "}
           <span className="text-sm font-normal opacity-60">
-            スペースキー／番号タップで先頭を完了
+            スペース／番号タップで調理済に（呼び出されると消えます）
           </span>
         </h1>
         <Link href="/select" className="text-sm underline opacity-70">
@@ -141,28 +152,39 @@ function CookingInner() {
             <table key={chunk[0].id} className="border-collapse">
               <thead>
                 <tr>
-                  {/* 品目名の見出し列 */}
                   <th className="bg-transparent" />
                   {chunk.map((order) => {
-                    const isHead = order.id === displayedOrders[0]?.id; // 全体の先頭
+                    const cooked = isCooked(order);
+                    const isHead = order.id === firstUncooked?.id;
                     return (
                       <th
                         key={order.id}
                         className={`w-[72px] border border-black/15 p-0 align-top dark:border-white/20 ${
                           isHead ? "bg-black/10 dark:bg-white/15" : ""
-                        }`}
+                        } ${cooked ? "bg-blue-50/50 dark:bg-blue-950/25" : ""}`}
                       >
                         <button
                           type="button"
                           onClick={() => complete(order)}
-                          disabled={completing.has(order.id)}
-                          aria-label={`注文 ${order.number} を完了`}
-                          className={`block w-full p-1 text-left text-[32px] font-bold leading-none tabular-nums disabled:opacity-40 ${
+                          disabled={cooked || completing.has(order.id)}
+                          aria-label={`注文 ${order.number} を調理済にする`}
+                          className={`block w-full p-1 text-left leading-none disabled:cursor-default ${
                             completing.has(order.id) ? "opacity-40" : ""
                           }`}
-                          title="タップで完了（準備完了へ）"
+                          title={cooked ? "調理済" : "タップで調理済に"}
                         >
-                          {order.number}
+                          <span
+                            className={`text-[32px] font-bold tabular-nums ${
+                              cooked ? "text-blue-600 opacity-70 dark:text-blue-400" : ""
+                            }`}
+                          >
+                            {order.number}
+                          </span>
+                          {cooked && (
+                            <span className="block text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                              ✓調理済
+                            </span>
+                          )}
                         </button>
                       </th>
                     );
@@ -177,11 +199,12 @@ function CookingInner() {
                     </td>
                     {chunk.map((order) => {
                       const q = qtyOf(order, p.id);
+                      const cooked = isCooked(order);
                       return (
                         <td
                           key={order.id}
                           className={`w-[72px] border border-black/15 p-1 text-left text-[32px] leading-none tabular-nums dark:border-white/20 ${
-                            q === 0 ? "opacity-30" : ""
+                            q === 0 ? "opacity-30" : cooked ? "opacity-40" : ""
                           }`}
                         >
                           {q}
