@@ -5,7 +5,9 @@
 #   2) docker compose -f compose.prod.yml up -d --build
 #   3) 前段の Nginx が pos.shutay.com を各コンテナへリバースプロキシ（nginx/pos.shutay.com.conf）
 #
-# ポートは 127.0.0.1 のみに公開し、外部公開は Nginx 経由に限定する。
+# ホストにポートを公開しない。前段 Nginx も「コンテナ」で動くため、外部ネットワーク
+# `nginx_web` に相乗りし、Nginx からは各コンテナ名(pos-frontend / pos-backend /
+# pos-reverb)で直接プロキシする。これによりホストのポートは一切露出しない。
 #
 # 開発用 docker-compose.yml とイメージ/コンテナ/ボリュームを共有しないよう
 # 専用のプロジェクト名を付ける（同一ホストで両方使う場合の衝突防止）。
@@ -71,13 +73,13 @@ services:
 
   backend:
     build: ./backend
+    container_name: pos-backend
     restart: unless-stopped
     environment:
       <<: *backend-env
       RUN_MIGRATIONS: "true"
       SETUP_ENV: "true"
-    ports:
-      - "127.0.0.1:8001:8001"
+    networks: [default, web]
     depends_on:
       db:
         condition: service_healthy
@@ -86,12 +88,12 @@ services:
 
   reverb:
     build: ./backend
+    container_name: pos-reverb
     restart: unless-stopped
     command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
     environment:
       <<: *backend-env
-    ports:
-      - "127.0.0.1:8080:8080"
+    networks: [default, web]
     depends_on:
       db:
         condition: service_healthy
@@ -100,6 +102,7 @@ services:
 
   queue:
     build: ./backend
+    container_name: pos-queue
     restart: unless-stopped
     command: ["php", "artisan", "queue:work", "--tries=3"]
     environment:
@@ -120,11 +123,19 @@ services:
         NEXT_PUBLIC_REVERB_HOST: ${NEXT_PUBLIC_REVERB_HOST:-pos.shutay.com}
         NEXT_PUBLIC_REVERB_PORT: ${NEXT_PUBLIC_REVERB_PORT:-443}
         NEXT_PUBLIC_REVERB_SCHEME: ${NEXT_PUBLIC_REVERB_SCHEME:-https}
+    container_name: pos-frontend
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3001:3001"
+    networks: [default, web]
     depends_on:
       - backend
 
 volumes:
   db_data:
+
+networks:
+  # 前段 Nginx コンテナが属する既存ネットワーク（相乗り）。
+  web:
+    external: true
+    name: nginx_web
+  # DB/Redis 等の内部通信用（このプロジェクト専用）。
+  default:

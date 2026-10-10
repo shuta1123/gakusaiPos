@@ -19,6 +19,10 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
+    if (password.length === 0) {
+      setError("共通パスワードを入力してください");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -50,8 +54,8 @@ export default function LoginPage() {
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button
           type="submit"
-          disabled={submitting || password.length === 0}
-          className="rounded-lg bg-black px-4 py-3 font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+          disabled={submitting}
+          className="rounded-lg bg-black px-4 py-3 text-lg font-medium text-white active:opacity-80 disabled:opacity-50 dark:bg-white dark:text-black"
         >
           {submitting ? "ログイン中…" : "ログイン"}
         </button>

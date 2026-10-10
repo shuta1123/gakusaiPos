@@ -7,6 +7,8 @@ import { statsApi, type Stats } from "@/lib/api";
 import { formatYen } from "@/lib/format";
 
 const REFRESH_MS = 10000;
+// 売上目標の単位（円）。達成するたびにこの倍数で次の目標が上がる（14万→28万→…）。
+const SALES_GOAL = 140000;
 
 function StatsInner() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -81,6 +83,42 @@ function StatsInner() {
         <p className="p-8 text-center text-sm opacity-60">読み込み中…</p>
       ) : stats ? (
         <>
+          {/* 売上目標（14万ごとのローリング目標：14万達成→次は28万…） */}
+          {(() => {
+            const total = stats.total_sales;
+            const cleared = Math.floor(total / SALES_GOAL); // 達成した14万の数
+            const nextGoal = (cleared + 1) * SALES_GOAL; // 次の目標（14万の倍数）
+            const bandStart = cleared * SALES_GOAL;
+            const pct = ((total - bandStart) / SALES_GOAL) * 100; // 現在の帯の達成率
+            const remaining = nextGoal - total;
+            return (
+              <div className="rounded-2xl border-2 border-black/20 p-5 dark:border-white/25">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm opacity-60">
+                    次の目標 {formatYen(nextGoal)}
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums">
+                    {Math.floor(pct)}%・あと {formatYen(remaining)}
+                  </span>
+                </div>
+                <p className="mt-1 text-4xl font-bold tabular-nums sm:text-5xl">
+                  {formatYen(total)}
+                </p>
+                <div className="mt-3 h-4 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/15">
+                  <div
+                    className="h-full rounded-full bg-black transition-all dark:bg-white"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                {cleared > 0 && (
+                  <p className="mt-2 text-sm font-semibold text-green-700 dark:text-green-400">
+                    🎉 {formatYen(SALES_GOAL)} を {cleared} 回達成
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
           {/* サマリカード */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-black/15 p-5 dark:border-white/20">

@@ -16,10 +16,12 @@ function itemSummary(order: Order): string {
 }
 
 function KitchenInner() {
-  // 受け渡し準備(準備完了) → 呼び出し中 → 受け渡し完了(非表示)
-  const waiting = useOrders({ status: "準備完了" });
+  // 準備中(会計完了＝調理中＋準備完了＝調理済) → 呼び出す → 呼び出し中 → 受け渡し完了(非表示)
+  const paid = useOrders({ status: "会計完了" }); // 会計完了（まだ調理中でも準備中に出す）
+  const ready = useOrders({ status: "準備完了" }); // 調理済
   const calling = useOrders({ status: "呼び出し中" });
-  const waitingRefresh = waiting.refresh;
+  const paidRefresh = paid.refresh;
+  const readyRefresh = ready.refresh;
   const callingRefresh = calling.refresh;
 
   // 楽観的除外（反映待ちを即座に隠す）。セクションごとに分ける。
@@ -31,9 +33,13 @@ function KitchenInner() {
   const [pending, setPending] = useState<Set<number>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // 準備中 = 会計完了 + 準備完了（番号順）。呼び出し済み(楽観)は除外。
   const displayedWaiting = useMemo(
-    () => waiting.orders.filter((o) => !calledIds.has(o.id)),
-    [waiting.orders, calledIds],
+    () =>
+      [...paid.orders, ...ready.orders]
+        .filter((o) => !calledIds.has(o.id))
+        .sort((a, b) => a.id - b.id),
+    [paid.orders, ready.orders, calledIds],
   );
   const displayedCalling = useMemo(
     () => calling.orders.filter((o) => !handedIds.has(o.id)),
@@ -56,7 +62,8 @@ function KitchenInner() {
         setActionError(null);
         await orderApi.updateStatus(order.id, to);
         markHidden(order.id);
-        waitingRefresh();
+        paidRefresh();
+        readyRefresh();
         callingRefresh();
       } catch (err) {
         setActionError(
@@ -69,7 +76,7 @@ function KitchenInner() {
         setPending(new Set(inFlightRef.current));
       }
     },
-    [waitingRefresh, callingRefresh],
+    [paidRefresh, readyRefresh, callingRefresh],
   );
 
   const callOrder = useCallback(
@@ -109,41 +116,52 @@ function KitchenInner() {
         </Link>
       </header>
 
-      {(waiting.error || calling.error || actionError) && (
+      {(paid.error || ready.error || calling.error || actionError) && (
         <p
           role="alert"
           aria-live="polite"
           className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40"
         >
-          {actionError ?? waiting.error ?? calling.error}
+          {actionError ?? paid.error ?? ready.error ?? calling.error}
         </p>
       )}
 
-      {/* 受け渡し準備 → タップで呼び出し */}
+      {/* 準備中（会計完了＋準備完了）→ タップで呼び出し */}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold opacity-70">
-          受け渡し準備（{displayedWaiting.length}）
+          準備中（{displayedWaiting.length}）
         </h2>
         {displayedWaiting.length === 0 ? (
           <p className="p-6 text-center text-sm opacity-50">ありません</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {displayedWaiting.map((order) => (
-              <button
-                key={order.id}
-                type="button"
-                onClick={() => callOrder(order)}
-                disabled={pending.has(order.id)}
-                aria-label={`注文 ${order.number} を呼び出す`}
-                className="flex flex-col items-start gap-1 rounded-xl border border-black/15 p-3 text-left transition hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/10"
-              >
-                <span className="text-[40px] font-bold leading-none tabular-nums">
-                  {order.number}
-                </span>
-                <span className="text-xs opacity-70">{itemSummary(order)}</span>
-                <span className="mt-1 text-xs font-medium opacity-90">呼び出す</span>
-              </button>
-            ))}
+            {displayedWaiting.map((order) => {
+              const cooked = order.status === "準備完了";
+              return (
+                <button
+                  key={order.id}
+                  type="button"
+                  onClick={() => callOrder(order)}
+                  disabled={pending.has(order.id)}
+                  aria-label={`注文 ${order.number} を呼び出す`}
+                  className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10 ${
+                    cooked
+                      ? "border-blue-500/60 bg-blue-50/40 dark:bg-blue-950/20"
+                      : "border-black/15 dark:border-white/20"
+                  }`}
+                >
+                  <span className="text-[40px] font-bold leading-none tabular-nums">
+                    {order.number}
+                  </span>
+                  <span className="text-xs opacity-70">{itemSummary(order)}</span>
+                  <span
+                    className={`mt-1 text-xs font-medium ${cooked ? "text-blue-600 dark:text-blue-400" : "opacity-60"}`}
+                  >
+                    {cooked ? "✓調理済" : "調理中"}・呼び出す
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
       </section>

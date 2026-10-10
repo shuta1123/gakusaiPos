@@ -188,10 +188,10 @@ class OrderController extends Controller
     public function allocateNumber(string $source): int
     {
         $base = Order::SOURCE_RANGES[$source] ?? 0;
-        $key = 'order_seq';
+        $key = "order_seq:{$source}";
 
-        // 共有カウンタ行をロックし、同時発番を直列化する。
-        // 行が無い場合（手動削除等）に備え、作成してからロックし直す。
+        // その source 専用のカウンタ行をロックし、同時発番を直列化する（レジごと独立）。
+        // 行が無い場合（新設・手動削除等）に備え、作成してからロックし直す。
         $counter = Counter::where('key', $key)->lockForUpdate()->first();
         if (! $counter) {
             Counter::firstOrCreate(['key' => $key], ['value' => 0]);
@@ -199,7 +199,7 @@ class OrderController extends Controller
         }
         $current = $counter->value;
 
-        $xx = $this->computeNextXx($current, $this->activeXx());
+        $xx = $this->computeNextXx($current, $this->blockedXx($source));
         if ($xx === null) {
             abort(409, '発番できる番号がありません（1〜50が全て使用中です）');
         }
@@ -211,14 +211,33 @@ class OrderController extends Controller
     }
 
     /**
-     * 現在アクティブ（受け渡し完了以外）な注文が占有している XX の集合（全レジ共通）。
+     * 指定 source で現在アクティブ（受け渡し完了以外）な注文が占有している XX の集合（レジごと独立）。
      */
-    private function activeXx(): Collection
+    private function activeXx(string $source): Collection
     {
-        return Order::whereIn('status', Order::ACTIVE_STATUSES)
+        return Order::where('source', $source)
+            ->whereIn('status', Order::ACTIVE_STATUSES)
             ->pluck('number')
             ->map(fn ($n) => $n % 100)
             ->flip();
+    }
+
+    /**
+     * 指定 source で発番を避けるべき XX の集合（アクティブ＋除外番号）。
+     * 除外番号(フル3桁)はその source の帯に入るものだけ XX に変換してブロックする。
+     */
+    private function blockedXx(string $source): Collection
+    {
+        $base = Order::SOURCE_RANGES[$source] ?? 0;
+        $blocked = $this->activeXx($source);
+        foreach (Order::EXCLUDED_NUMBERS as $number) {
+            $xx = $number - $base;
+            if ($xx >= Order::XX_MIN && $xx <= Order::XX_MAX) {
+                $blocked->put($xx, true);
+            }
+        }
+
+        return $blocked;
     }
 
     /**
@@ -247,8 +266,8 @@ class OrderController extends Controller
         ]);
 
         $source = $validated['source'];
-        $current = (int) (Counter::where('key', 'order_seq')->value('value') ?? 0);
-        $xx = $this->computeNextXx($current, $this->activeXx());
+        $current = (int) (Counter::where('key', "order_seq:{$source}")->value('value') ?? 0);
+        $xx = $this->computeNextXx($current, $this->blockedXx($source));
 
         if ($xx === null) {
             return response()->json(['number' => null, 'message' => '空き番号がありません'], 409);

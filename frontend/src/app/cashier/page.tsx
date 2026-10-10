@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
@@ -31,6 +38,8 @@ function CashierInner() {
   const [phase, setPhase] = useState<"cart" | "submitting" | "done">("cart");
   const [issuedNumber, setIssuedNumber] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // 番号が満杯で発番できない＝受付停止中。
+  const [receptionStopped, setReceptionStopped] = useState(false);
   // 会計完了時の金額を固定表示するためのスナップショット（完了画面用）。
   const [snapshot, setSnapshot] = useState<{
     subtotal: number;
@@ -63,7 +72,31 @@ function CashierInner() {
     change >= 0 &&
     phase !== "submitting" &&
     !adminMode &&
-    !hasSoldOutInCart;
+    !hasSoldOutInCart &&
+    !receptionStopped;
+
+  // 番号の空きを定期確認し、満杯なら受付停止を表示する（受け渡しが進めば自動解除）。
+  const checkCapacity = useCallback(async () => {
+    if (!register) return;
+    try {
+      await orderApi.nextNumber(register);
+      setReceptionStopped(false);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setReceptionStopped(true);
+      }
+    }
+  }, [register]);
+
+  const checkCapacityRef = useRef(checkCapacity);
+  useEffect(() => {
+    checkCapacityRef.current = checkCapacity;
+  }, [checkCapacity]);
+  useEffect(() => {
+    checkCapacityRef.current();
+    const t = setInterval(() => checkCapacityRef.current(), 4000);
+    return () => clearInterval(t);
+  }, []);
 
   const addItem = useCallback((p: Product) => {
     if (p.is_sold_out) return;
@@ -136,6 +169,9 @@ function CashierInner() {
         }
         setSubmitError(e.message + "。売り切れ商品をカートから削除しました。");
         refresh();
+      } else if (e instanceof ApiError && e.status === 409) {
+        // 番号が満杯 → 受付停止を表示（カートは保持し、空きが出たら会計可能に）。
+        setReceptionStopped(true);
       } else {
         setSubmitError(e instanceof Error ? e.message : "会計処理に失敗しました");
       }
@@ -290,6 +326,15 @@ function CashierInner() {
           </Link>
         </div>
       </header>
+
+      {receptionStopped && (
+        <div className="rounded-xl bg-red-600 px-4 py-3 text-center text-white">
+          <p className="text-lg font-bold">⚠ 受付停止中</p>
+          <p className="text-sm opacity-90">
+            番号が満杯です（1〜50が全て未受け渡し）。受け渡しが進むと自動で再開します。
+          </p>
+        </div>
+      )}
 
       {error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40">
@@ -554,9 +599,11 @@ function CashierInner() {
           >
             {phase === "submitting"
               ? "処理中…"
-              : adminMode
-                ? "管理者モード中"
-                : "会計完了（Enter）"}
+              : receptionStopped
+                ? "受付停止中（番号満杯）"
+                : adminMode
+                  ? "管理者モード中"
+                  : "会計完了（Enter）"}
           </button>
         </section>
       </div>

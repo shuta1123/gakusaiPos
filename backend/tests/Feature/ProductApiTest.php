@@ -28,7 +28,7 @@ class ProductApiTest extends TestCase
             ->getJson('/api/products')
             ->assertOk()
             ->assertJsonCount(5)
-            ->assertJsonFragment(['name' => '焼きそば', 'price' => 300])
+            ->assertJsonFragment(['name' => '焼きそば', 'price' => 600])
             ->assertJsonFragment(['name' => 'わらび餅', 'price' => 400]);
     }
 
