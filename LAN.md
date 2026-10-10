@@ -53,3 +53,19 @@ docker compose logs -f       # ログ確認
 - より高負荷・高信頼にしたい場合は、フロントを standalone 本番ビルド化・
   backendを Octane/FPM 化する余地あり（今後の課題）。
 - タブレットは自動スリープ・自動ロックを切っておくと安定します。
+
+## 固定名モード（IPが変わる環境で推奨）
+
+IPが頻繁に変わるネットワークでは、Macの固定名（`.local`）でアクセスすると
+**IPが変わってもURLが変わらない**（Bonjour が名前→現IPを自動解決）。
+
+```bash
+LAN_HOST="$(scutil --get LocalHostName).local" ./scripts/lan-up.sh
+```
+
+表示される `http://<名前>.local:3001` を各端末でブックマークすればよい。
+以降 IP が変わっても再実行・URL変更は不要（監視スクリプトも不要）。
+
+> 名前が長い場合は「システム設定 > 一般 > 情報 > 名前」で短く変更できる
+> （例: `pos` → `http://pos.local:3001`）。変更後に上記を再実行。
+> 端末は mDNS(.local) 対応が必要（iPhone/iPad/最近のAndroid・PCはほぼ対応）。

@@ -31,17 +31,22 @@ fi
 
 echo "LAN IP: $IP"
 
+# 端末が接続するホスト。LAN_HOST を指定すると固定名(.local 等)を使える。
+# 固定名ならIPが変わってもURLが変わらない（Bonjour が名前→現IPを解決）。
+HOST="${LAN_HOST:-$IP}"
+echo "接続ホスト: $HOST"
+
 # --- 端末（ブラウザ）が参照する接続先を .env に書き込む ---
-# ※ フロントは別端末で動くので localhost ではなくホストの IP を指す必要がある。
+# ※ フロントは別端末で動くので localhost ではなくホストの IP/名前 を指す必要がある。
 cat > .env <<EOF
-# LAN共有モード（scripts/lan-up.sh が生成）。ホスト: $IP
-NEXT_PUBLIC_API_BASE=http://$IP:8001/api
-NEXT_PUBLIC_REVERB_HOST=$IP
+# LAN共有モード（scripts/lan-up.sh が生成）。ホスト: $HOST
+NEXT_PUBLIC_API_BASE=http://$HOST:8001/api
+NEXT_PUBLIC_REVERB_HOST=$HOST
 NEXT_PUBLIC_REVERB_PORT=8080
 NEXT_PUBLIC_REVERB_SCHEME=http
-CORS_ALLOWED_ORIGINS=http://$IP:3001,http://localhost:3001
-# Next.js 開発サーバーが LAN IP からのアクセスを許可するため（403回避）
-LAN_DEV_ORIGIN=$IP
+CORS_ALLOWED_ORIGINS=http://$HOST:3001,http://localhost:3001
+# Next.js 開発サーバーが別オリジンからのアクセスを許可するため（403回避）
+LAN_DEV_ORIGIN=$HOST
 EOF
 
 # --- 起動（env 反映のため再作成込み）---
@@ -54,12 +59,12 @@ cat <<EOF
 ------------------------------------------------------------
  同じ Wi-Fi の端末（タブレット等）のブラウザで:
 
-     http://$IP:3001
+     http://$HOST:3001
 
  共通パスワードでログイン → 画面選択。
 ------------------------------------------------------------
  注意:
-  - このホスト（$IP）を起動したままにしておくこと。
+  - このホスト（$HOST）を起動したままにしておくこと。
   - macOS のファイアウォールが有効な場合、Docker への
     受信接続を「許可」する必要があります
     （システム設定 > ネットワーク > ファイアウォール）。
