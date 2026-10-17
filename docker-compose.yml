@@ -1,0 +1,68 @@
+services:
+
+  # ─────────────────────────────────────────────
+  # frontend: Next.js 開発サーバー
+  # ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"   # ホスト:コンテナ
+    volumes:
+      - ./frontend:/app              # ホストのコードをコンテナにマウント（ホットリロード用）
+      - /app/node_modules            # node_modulesはコンテナ内のものを使う（上書きしない）
+    environment:
+      - WATCHPACK_POLLING=true       # DockerボリュームでNext.jsのHMRが動くようにポーリングを有効化
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  # ─────────────────────────────────────────────
+  # backend: Laravel (PHP 8.3)
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/var/www/backend   # コードをマウントしてライブ編集を反映
+    environment:
+      # .envのSQLite設定をMySQLで上書き（システム環境変数は.envより優先される）
+      DB_CONNECTION: mysql
+      DB_HOST: db                    # docker-compose内のサービス名がホスト名になる
+      DB_PORT: 3306
+      DB_DATABASE: pos_db
+      DB_USERNAME: pos_user
+      DB_PASSWORD: password
+    depends_on:
+      db:
+        condition: service_healthy   # MySQLの起動を確認してからLaravelを起動
+
+  # ─────────────────────────────────────────────
+  # db: MySQL 8.0
+  # ─────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"   # ホストからDBクライアントで直接接続できるように公開
+    environment:
+      MYSQL_DATABASE: pos_db
+      MYSQL_USER: pos_user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: rootpassword
+    volumes:
+      - db_data:/var/lib/mysql      # DBデータをボリュームに永続化
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# 名前付きボリューム: コンテナを削除してもDBデータが消えない
+# ─────────────────────────────────────────────
+volumes:
+  db_data:
